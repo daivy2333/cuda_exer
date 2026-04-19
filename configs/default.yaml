@@ -1,0 +1,22 @@
+# Default Configuration
+
+# Block Table Settings
+block_size: 16
+num_blocks: 100
+
+# Memory Settings
+hidden_dim: 64
+max_memory_mb: 100
+
+# Dynamic Batching Settings
+max_batch_size: 8
+min_batch_size: 1
+latency_target: 0.2  # seconds
+window_size: 1.0  # seconds
+
+# BPHA Settings
+num_heads: 1
+
+# Logging
+log_level: INFO
+log_file: null

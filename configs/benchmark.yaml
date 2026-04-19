@@ -1,0 +1,11 @@
+# Benchmark Configuration
+
+block_size: 16
+num_blocks: 200
+hidden_dim: 64
+
+max_batch_size: 8
+latency_target: 0.2
+
+benchmark_iterations: 100
+warmup_iterations: 10

@@ -1,0 +1,20 @@
+# Development Configuration
+
+# Enable debug mode
+debug: true
+
+# Block Table Settings (dev)
+block_size: 8
+num_blocks: 50
+
+# Memory Settings (dev)
+hidden_dim: 32
+max_memory_mb: 50
+
+# Dynamic Batching Settings (dev)
+max_batch_size: 4
+min_batch_size: 1
+latency_target: 0.5
+
+# Logging
+log_level: DEBUG
