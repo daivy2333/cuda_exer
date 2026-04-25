@@ -17,7 +17,7 @@ class PagedAttention:
     with standard attention.
     """
 
-    def __init__(self, block_size: int = 16, scale: Optional[float] = None):
+    def __init__(self, block_size: int = 128, scale: Optional[float] = None):
         """
         Initialize PagedAttention.
 
@@ -65,26 +65,13 @@ class PagedAttention:
 
         return output, (all_k, all_v)
 
-    def _gather_kv(
+def _gather_kv(
         self,
         block_table: "BlockTable",
         seq_id: int,
         num_tokens: int,
         past_kv: Optional[Tuple[torch.Tensor, torch.Tensor]],
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-        """
-        Gather KV tensors from paged blocks.
-
-        Args:
-            block_table: BlockTable for physical block lookup
-            seq_id: Sequence ID
-            num_tokens: Total tokens in sequence
-            past_kv: Optional past KV tensors
-
-        Returns:
-            k: All key vectors [1, num_tokens, d_k]
-            v: All value vectors [1, num_tokens, d_v]
-        """
         block_ids = block_table.get_block_ids(seq_id)
 
         if not block_ids:
@@ -113,6 +100,7 @@ class PagedAttention:
             all_k = all_k.reshape(-1, all_k.shape[-1]).unsqueeze(0)
             all_v = all_v.reshape(-1, all_v.shape[-1]).unsqueeze(0)
         else:
+            d_k = self.block_size
             all_k = torch.zeros(1, num_tokens, d_k)
             all_v = torch.zeros(1, num_tokens, d_k)
 

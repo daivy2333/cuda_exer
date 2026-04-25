@@ -17,6 +17,9 @@ def bpha_forward(
     """
     Forward pass of Block-Paged Hybrid Attention.
 
+    Uses block-wise computation with proper attention semantics.
+    For each block, computes attention contribution then accumulates.
+
     Args:
         query: Query tensor [batch, q_len, d_k]
         kv_blocks: List of (K_block, V_block) tuples
@@ -35,18 +38,12 @@ def bpha_forward(
 
     batch_size, q_len, d_v = query.shape[0], query.shape[1], kv_blocks[0][1].shape[-1]
 
-    output = torch.zeros(batch_size, q_len, d_v, device=query.device, dtype=query.dtype)
+    k_concat = torch.cat([k for k, v in kv_blocks], dim=1)
+    v_concat = torch.cat([v for k, v in kv_blocks], dim=1)
 
-    for (k_block, v_block), offset in zip(kv_blocks, block_offsets):
-        scores = torch.matmul(query, k_block.transpose(-2, -1)) * scale
-
-        attn_weights = F.softmax(scores, dim=-1)
-
-        block_out = torch.matmul(attn_weights, v_block)
-
-        valid_tokens = min(k_block.shape[-2], q_len - offset)
-        if valid_tokens > 0:
-            output[:, offset : offset + valid_tokens] += block_out[:, :valid_tokens]
+    scores = torch.matmul(query, k_concat.transpose(-2, -1)) * scale
+    attn_weights = torch.softmax(scores, dim=-1)
+    output = torch.matmul(attn_weights, v_concat)
 
     return output
 

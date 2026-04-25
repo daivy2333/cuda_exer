@@ -42,48 +42,18 @@ class BPHAOperator(nn.Module):
         kv_blocks: List[Tuple[torch.Tensor, torch.Tensor]],
         block_offsets: List[int],
     ) -> torch.Tensor:
-        """
-        Compute BPHA attention.
-
-        Args:
-            query: Query tensor [batch, seq_len, hidden_dim]
-            kv_blocks: List of (K_block, V_block) tuples
-            block_offsets: Starting token offset for each block
-
-        Returns:
-            Attention output [batch, seq_len, hidden_dim]
-        """
         if not kv_blocks:
             return torch.zeros_like(query)
 
         batch_size, q_len, _ = query.shape
-        outputs = []
+        d_v = kv_blocks[0][1].shape[-1]
 
-        for b in range(batch_size):
-            q_b = query[b]
-            output_b = torch.zeros_like(q_b)
+        k_concat = torch.cat([k for k, v in kv_blocks], dim=1)
+        v_concat = torch.cat([v for k, v in kv_blocks], dim=1)
 
-            for block_idx, ((k_block, v_block), offset) in enumerate(
-                zip(kv_blocks, block_offsets)
-            ):
-                k = k_block[b] if k_block.dim() > 2 else k_block
-                v = v_block[b] if v_block.dim() > 2 else v_block
+        output = torch.matmul(torch.softmax(torch.matmul(query, k_concat.transpose(-2, -1)) * self.scale, dim=-1), v_concat)
 
-                scores = torch.matmul(q_b, k.transpose(-2, -1)) * self.scale
-
-                attn_weights = F.softmax(scores, dim=-1)
-
-                block_output = torch.matmul(attn_weights, v)
-
-                valid_tokens = k.shape[0]
-                end_idx = min(offset + valid_tokens, q_len)
-                actual_valid = end_idx - offset
-                if actual_valid > 0:
-                    output_b[offset:end_idx] += block_output[:actual_valid]
-
-            outputs.append(output_b)
-
-        return torch.stack(outputs, dim=0)
+        return output
 
     def compute_block_attention(
         self, query: torch.Tensor, k_block: torch.Tensor, v_block: torch.Tensor

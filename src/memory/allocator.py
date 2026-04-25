@@ -68,21 +68,14 @@ class BlockAllocator:
         return allocated
 
     def free(self, block_ids: List[int]):
-        """
-        Free allocated blocks.
-
-        Args:
-            block_ids: List of block IDs to free
-        """
         for block_id in block_ids:
             if 0 <= block_id < self.num_blocks:
                 self.allocations[block_id].in_use = False
                 if block_id not in self.free_blocks:
                     self.free_blocks.append(block_id)
-        self.free_blocks = deque(sorted(self.free_blocks, reverse=True))
+        self.free_blocks = deque(sorted(self.free_blocks))
 
     def free_all(self):
-        """Free all allocated blocks."""
         for i in range(self.num_blocks):
             self.allocations[i].in_use = False
         self.free_blocks = deque(range(self.num_blocks))

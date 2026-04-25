@@ -19,7 +19,7 @@ class PagedMemoryManager:
     """
 
     def __init__(
-        self, block_size: int = 16, num_blocks: int = 100, hidden_dim: int = 64
+        self, block_size: int = 128, num_blocks: int = 100, hidden_dim: int = 64
     ):
         """
         Initialize PagedMemoryManager.

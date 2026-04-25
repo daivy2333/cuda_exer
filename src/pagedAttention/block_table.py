@@ -35,7 +35,7 @@ class BlockTable:
     storage while maintaining logical sequence continuity.
     """
 
-    def __init__(self, block_size: int = 16, num_blocks: int = 100):
+    def __init__(self, block_size: int = 128, num_blocks: int = 100):
         """
         Initialize BlockTable.
 
