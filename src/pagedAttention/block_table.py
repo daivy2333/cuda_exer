@@ -4,6 +4,7 @@ Block Table: Logical to Physical Block Mapping
 Simulates OS page table for KV Cache block management.
 """
 
+import threading
 from typing import Dict, List, Optional
 from dataclasses import dataclass, field
 import numpy as np
@@ -12,6 +13,7 @@ import numpy as np
 @dataclass
 class Block:
     """Physical block storing KV pairs."""
+
     block_id: int
     size: int
     tokens: List[int] = field(default_factory=list)
@@ -46,6 +48,7 @@ class BlockTable:
         self.physical_blocks: List[Block] = []
         self.mappings: Dict[int, List[int]] = {}
         self.free_blocks: List[int] = []
+        self._lock = threading.Lock()
         self._initialize_blocks(num_blocks)
 
     def _initialize_blocks(self, num_blocks: int):
@@ -65,18 +68,19 @@ class BlockTable:
         Returns:
             List of physical block IDs allocated
         """
-        num_blocks_needed = (num_tokens + self.block_size - 1) // self.block_size
-        block_ids = []
+        with self._lock:
+            num_blocks_needed = (num_tokens + self.block_size - 1) // self.block_size
+            block_ids = []
 
-        for i in range(num_blocks_needed):
-            if not self.free_blocks:
-                raise RuntimeError("No free blocks available")
+            for _ in range(num_blocks_needed):
+                if not self.free_blocks:
+                    raise RuntimeError("No free blocks available")
 
-            block_id = self.free_blocks.pop(0)
-            block_ids.append(block_id)
+                block_id = self.free_blocks.pop()
+                block_ids.append(block_id)
 
-        self.mappings[seq_id] = block_ids
-        return block_ids
+            self.mappings[seq_id] = block_ids
+            return block_ids
 
     def free(self, seq_id: int):
         """
@@ -85,12 +89,13 @@ class BlockTable:
         Args:
             seq_id: Sequence identifier
         """
-        if seq_id not in self.mappings:
-            return
+        with self._lock:
+            if seq_id not in self.mappings:
+                return
 
-        self.free_blocks.extend(self.mappings[seq_id])
-        self.free_blocks.sort()
-        del self.mappings[seq_id]
+            self.free_blocks.extend(self.mappings[seq_id])
+            self.free_blocks.sort(reverse=True)
+            del self.mappings[seq_id]
 
     def get_physical_blocks(self, seq_id: int) -> List[Block]:
         """
@@ -142,16 +147,18 @@ class BlockTable:
         Returns:
             Utilization rate (0.0 to 1.0)
         """
-        used_blocks = sum(1 for bid in range(self.num_blocks)
-                         if bid not in self.free_blocks)
-        total_capacity = used_blocks * self.block_size
+        free_set = set(self.free_blocks)
+        used_blocks = self.num_blocks - len(free_set)
+        total_capacity = self.num_blocks * self.block_size
 
         if total_capacity == 0:
             return 0.0
 
-        used_tokens = sum(len(block.tokens)
-                          for block in self.physical_blocks
-                          if block.block_id not in self.free_blocks)
+        used_tokens = sum(
+            len(block.tokens)
+            for block in self.physical_blocks
+            if block.block_id not in free_set
+        )
 
         return used_tokens / total_capacity
 
@@ -159,19 +166,48 @@ class BlockTable:
         """Return number of available blocks."""
         return len(self.free_blocks)
 
+    def can_allocate(self, num_blocks: int) -> bool:
+        """
+        Check if allocation of given number of blocks is possible.
+
+        Args:
+            num_blocks: Number of blocks needed
+
+        Returns:
+            True if enough free blocks available
+        """
+        return num_blocks <= len(self.free_blocks)
+
     def get_num_used_blocks(self) -> int:
         """Return number of allocated blocks."""
         return self.num_blocks - len(self.free_blocks)
 
     def reset(self):
         """Reset all allocations."""
-        self.mappings.clear()
-        self.free_blocks = list(range(self.num_blocks))
-        for block in self.physical_blocks:
-            block.tokens.clear()
-            block.k_data = None
-            block.v_data = None
+        with self._lock:
+            self.mappings.clear()
+            self.free_blocks = list(range(self.num_blocks))
+            for block in self.physical_blocks:
+                block.tokens.clear()
+                block.k_data = None
+                block.v_data = None
 
     def __repr__(self) -> str:
-        return (f"BlockTable(block_size={self.block_size}, "
-                f"used={self.get_num_used_blocks()}/{self.num_blocks})")
+        return (
+            f"BlockTable(block_size={self.block_size}, "
+            f"used={self.get_num_used_blocks()}/{self.num_blocks})"
+        )
+
+    def print_summary(self):
+        """Print a summary of block table state."""
+        print(f"\n=== BlockTable Summary ===")
+        print(f"Block size: {self.block_size}")
+        print(f"Total blocks: {self.num_blocks}")
+        print(f"Used blocks: {self.get_num_used_blocks()}")
+        print(f"Free blocks: {self.get_num_free_blocks()}")
+        print(f"Utilization: {self.get_utilization():.1%}")
+        print(f"Active sequences: {len(self.mappings)}")
+        if self.mappings:
+            print("Sequence allocations:")
+            for seq_id, block_ids in self.mappings.items():
+                print(f"  seq_{seq_id}: {len(block_ids)} blocks -> {block_ids}")

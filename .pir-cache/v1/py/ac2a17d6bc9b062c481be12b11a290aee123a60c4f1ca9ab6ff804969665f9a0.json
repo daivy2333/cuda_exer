@@ -1,0 +1,17 @@
+{
+  "deps": [
+    "import:[.block_table]",
+    "import:[.paged_memory]",
+    "import:[.paged_attention]"
+  ],
+  "file": "../src/pagedAttention/__init__.py",
+  "hash": "ac2a17d6bc9b062c481be12b11a290aee123a60c4f1ca9ab6ff804969665f9a0",
+  "lang": "PY",
+  "symbols": [],
+  "timestamp": "2026-04-22T13:23:12.811606",
+  "unit": {
+    "module": "pagedAttention",
+    "role": "lib"
+  },
+  "version": "pir-analyzer-v1"
+}

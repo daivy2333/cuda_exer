@@ -137,9 +137,8 @@ python -m pytest tests/test_block_table.py -v
 
 ## Documentation
 
-- [Algorithm Principles](docs/algorithm_principles.md) - Detailed algorithm explanations
-- [Local Replication Guide](docs/local_replication_guide.md) - Single-GPU replication strategy
-- [Project Documentation](docs/PROJECT.md) - Full project documentation
+- [Algorithm Principles](docs/algorithm-principles.md) - Theory and design rationale
+- [Project Documentation](docs/PROJECT.md) - API reference and architecture
 
 ## Hardware Requirements
 

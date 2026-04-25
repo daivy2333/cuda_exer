@@ -40,11 +40,11 @@ class TestMemoryTracker(unittest.TestCase):
         self.tracker.allocate(1000)
         self.assertEqual(self.tracker.peak_bytes, 1000)
 
-        self.tracker.allocate(2000)
-        self.assertEqual(self.tracker.peak_bytes, 2000)
+        self.tracker.allocate(2000)  # This adds 2000 to the current allocation
+        self.assertEqual(self.tracker.peak_bytes, 3000)  # Peak is cumulative: 1000 + 2000 = 3000
 
         self.tracker.free(1000)
-        self.assertEqual(self.tracker.peak_bytes, 2000)
+        self.assertEqual(self.tracker.peak_bytes, 3000)  # Peak remains at maximum
 
     def test_get_current_stats(self):
         """Test getting current statistics."""

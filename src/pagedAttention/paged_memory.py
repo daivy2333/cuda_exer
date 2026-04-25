@@ -18,10 +18,9 @@ class PagedMemoryManager:
     - Support for variable-length sequences
     """
 
-    def __init__(self,
-                 block_size: int = 16,
-                 num_blocks: int = 100,
-                 hidden_dim: int = 64):
+    def __init__(
+        self, block_size: int = 16, num_blocks: int = 100, hidden_dim: int = 64
+    ):
         """
         Initialize PagedMemoryManager.
 
@@ -32,8 +31,7 @@ class PagedMemoryManager:
         """
         self.block_size = block_size
         self.hidden_dim = hidden_dim
-        self.block_table = BlockTable(block_size=block_size,
-                                      num_blocks=num_blocks)
+        self.block_table = BlockTable(block_size=block_size, num_blocks=num_blocks)
         self.active_sequences: Dict[int, int] = {}
 
     def allocate_sequence(self, seq_id: int, num_tokens: int) -> bool:
@@ -69,10 +67,9 @@ class PagedMemoryManager:
         if seq_id in self.active_sequences:
             del self.active_sequences[seq_id]
 
-    def append_tokens(self,
-                     seq_id: int,
-                     k_vectors: np.ndarray,
-                     v_vectors: np.ndarray) -> bool:
+    def append_tokens(
+        self, seq_id: int, k_vectors: np.ndarray, v_vectors: np.ndarray
+    ) -> bool:
         """
         Append new token KV vectors to sequence.
 
@@ -103,14 +100,19 @@ class PagedMemoryManager:
             pos_in_block = (current_len + offset) % self.block_size
             space_available = block.size - pos_in_block
 
+            if block.k_data is None or block.v_data is None:
+                return False
+
             copy_size = min(remaining, space_available)
 
-            block.k_data[pos_in_block:pos_in_block + copy_size] = \
-                k_vectors[offset:offset + copy_size]
-            block.v_data[pos_in_block:pos_in_block + copy_size] = \
-                v_vectors[offset:offset + copy_size]
+            block.k_data[pos_in_block : pos_in_block + copy_size] = k_vectors[
+                offset : offset + copy_size
+            ]
+            block.v_data[pos_in_block : pos_in_block + copy_size] = v_vectors[
+                offset : offset + copy_size
+            ]
 
-            block.tokens.extend([0] * copy_size)
+            block.tokens.extend(range(copy_size))
 
             offset += copy_size
             remaining -= copy_size
@@ -126,9 +128,15 @@ class PagedMemoryManager:
             List of (K_block, V_block) tuples
         """
         blocks = self.block_table.get_physical_blocks(seq_id)
-        return [(block.k_data[:len(block.tokens)],
-                 block.v_data[:len(block.tokens)])
-                for block in blocks]
+        result = []
+        for block in blocks:
+            if block.k_data is not None and block.v_data is not None:
+                valid_tokens = len(block.tokens)
+                if valid_tokens > 0:
+                    result.append(
+                        (block.k_data[:valid_tokens], block.v_data[:valid_tokens])
+                    )
+        return result
 
     def get_memory_stats(self) -> Dict[str, float]:
         """
@@ -143,20 +151,24 @@ class PagedMemoryManager:
 
         total_capacity = total_blocks * self.block_size * self.hidden_dim * 2
         block_size_bytes = 8
-        total_memory = total_blocks * self.block_size * self.hidden_dim * 2 * block_size_bytes
+        total_memory = (
+            total_blocks * self.block_size * self.hidden_dim * 2 * block_size_bytes
+        )
 
         used_tokens = sum(self.active_sequences.values())
         utilized_capacity = used_tokens * self.hidden_dim * 2 * block_size_bytes
 
         return {
-            'total_blocks': total_blocks,
-            'used_blocks': used_blocks,
-            'free_blocks': free_blocks,
-            'utilization': used_blocks / total_blocks if total_blocks > 0 else 0,
-            'total_memory_mb': total_memory / (1024 * 1024),
-            'utilized_memory_mb': utilized_capacity / (1024 * 1024),
-            'fragmentation_rate': 1.0 - (used_tokens / (used_blocks * self.block_size)) if used_blocks > 0 else 0,
-            'active_sequences': len(self.active_sequences)
+            "total_blocks": total_blocks,
+            "used_blocks": used_blocks,
+            "free_blocks": free_blocks,
+            "utilization": used_blocks / total_blocks if total_blocks > 0 else 0,
+            "total_memory_mb": total_memory / (1024 * 1024),
+            "utilized_memory_mb": utilized_capacity / (1024 * 1024),
+            "fragmentation_rate": 1.0 - (used_tokens / (used_blocks * self.block_size))
+            if used_blocks > 0
+            else 0,
+            "active_sequences": len(self.active_sequences),
         }
 
     def reset(self):
@@ -171,5 +183,7 @@ class PagedMemoryManager:
 
     def __repr__(self) -> str:
         stats = self.get_memory_stats()
-        return (f"PagedMemoryManager(blocks={stats['used_blocks']}/{stats['total_blocks']}, "
-                f"util={stats['utilization']:.1%})")
+        return (
+            f"PagedMemoryManager(blocks={stats['used_blocks']}/{stats['total_blocks']}, "
+            f"util={stats['utilization']:.1%})"
+        )

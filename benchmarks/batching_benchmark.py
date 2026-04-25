@@ -98,8 +98,20 @@ def benchmark_adaptive_batching():
 
     for lam, name in loads:
         mu = 15.0
-        batcher.arrival_rate = lam
-        batcher.service_rate = mu
+        queue = M1M1Queue(arrival_rate=lam, service_rate=mu)
+        rho = lam / mu
+
+        # Clear batcher state and add requests to simulate load
+        batcher.reset()
+        from dynamicBatching.adaptive_batcher import Request
+        for i in range(int(lam * 2)):
+            req = Request(
+                request_id=i,
+                arrival_time=time.time() - i * 0.1,
+                seq_length=100 + (i % 100),
+                metadata={}
+            )
+            batcher.add_request(req)
 
         decision = batcher.decide_batch_size()
 
@@ -109,6 +121,7 @@ def benchmark_adaptive_batching():
 
 def simulate_burst_traffic():
     """Simulate burst traffic patterns."""
+    from dynamicBatching.adaptive_batcher import Request
     print("\n" + "=" * 70)
     print("Burst Traffic Simulation")
     print("=" * 70)
@@ -119,11 +132,12 @@ def simulate_burst_traffic():
 
     for burst_size in [2, 5, 10, 15, 20]:
         for i in range(burst_size):
-            req = type('Request', (), {
-                'request_id': i,
-                'arrival_time': time.time(),
-                'seq_length': 100 + (i % 100)
-            })()
+            req = Request(
+                request_id=i,
+                arrival_time=time.time(),
+                seq_length=100 + (i % 100),
+                metadata={}
+            )
             batcher.add_request(req)
 
         decision = batcher.decide_batch_size()

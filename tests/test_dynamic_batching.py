@@ -64,11 +64,16 @@ class TestM1M1Queue(unittest.TestCase):
 
         p0 = queue.probability_n_in_system(0)
         p1 = queue.probability_n_in_system(1)
+        p2 = queue.probability_n_in_system(2)
 
         self.assertGreater(p0, 0)
         self.assertGreater(p1, 0)
-        self.assertAlmostEqual(p0 + queue.probability_n_in_system(1) +
-                               queue.probability_n_in_system(2), 1.0, places=1)
+        # Probabilities should be decreasing and valid (between 0 and 1)
+        self.assertLess(p1, p0)
+        self.assertLess(p2, p1)
+        # Check that probabilities are valid and p0 = 1 - rho
+        rho = queue.utilization
+        self.assertAlmostEqual(p0, 1 - rho, places=4)
 
     def test_optimal_batch_size(self):
         """Test optimal batch size calculation."""

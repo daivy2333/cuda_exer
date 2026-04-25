@@ -1,0 +1,35 @@
+{
+  "deps": [
+    "import:[sys]",
+    "import:[os]",
+    "import:[time]",
+    "import:[numpy]",
+    "import:[pagedAttention]"
+  ],
+  "file": "../benchmarks/memory_benchmark.py",
+  "hash": "60bbeec2c98d32933593056688148c76e400f6ba11509c46ca65bb9499d47223",
+  "lang": "PY",
+  "symbols": [
+    {
+      "attrs": {},
+      "kind": "func",
+      "name": "simulate_contiguous_allocation"
+    },
+    {
+      "attrs": {},
+      "kind": "func",
+      "name": "benchmark_fragmentation"
+    },
+    {
+      "attrs": {},
+      "kind": "func",
+      "name": "benchmark_alloc_free"
+    }
+  ],
+  "timestamp": "2026-04-22T13:23:12.819464",
+  "unit": {
+    "module": "benchmarks",
+    "role": "lib"
+  },
+  "version": "pir-analyzer-v1"
+}

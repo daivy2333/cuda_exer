@@ -2,8 +2,9 @@
 Adaptive Batcher: Dynamic batch size adjustment based on system load
 """
 
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Deque
 from dataclasses import dataclass, field
+from collections import deque
 import time
 import threading
 
@@ -11,15 +12,19 @@ import threading
 @dataclass
 class Request:
     """Represents a single inference request."""
+
     request_id: int
     arrival_time: float
     seq_length: int
     metadata: Dict[str, Any] = field(default_factory=dict)
+    start_time: Optional[float] = None
+    completion_time: Optional[float] = None
 
 
 @dataclass
 class BatchDecision:
     """Result of batch size decision."""
+
     batch_size: int
     timestamp: float
     lambda_rate: float
@@ -41,7 +46,7 @@ class AdaptiveBatcher:
         max_batch_size: int = 8,
         min_batch_size: int = 1,
         latency_target: float = 0.2,
-        window_size: float = 1.0
+        window_size: float = 1.0,
     ):
         """
         Initialize AdaptiveBatcher.
@@ -57,9 +62,9 @@ class AdaptiveBatcher:
         self.latency_target = latency_target
         self.window_size = window_size
 
-        self.request_queue: List[Request] = []
-        self.arrival_times: List[float] = []
-        self.service_times: List[float] = []
+        self.request_queue: Deque[Request] = deque()
+        self.arrival_times: Deque[float] = deque()
+        self.service_times: Deque[float] = deque()
         self.completed_requests: List[Request] = []
 
         self.start_time = time.time()
@@ -82,8 +87,10 @@ class AdaptiveBatcher:
             decision = self.decide_batch_size()
             batch_size = decision.batch_size
 
-            batch = self.request_queue[:batch_size]
-            self.request_queue = self.request_queue[batch_size:]
+            batch = [
+                self.request_queue.popleft()
+                for _ in range(min(batch_size, len(self.request_queue)))
+            ]
 
             for req in batch:
                 req.start_time = time.time()
@@ -95,8 +102,9 @@ class AdaptiveBatcher:
         with self.lock:
             for req in batch:
                 req.completion_time = time.time()
-                service_time = req.completion_time - req.start_time
-                self.service_times.append(service_time)
+                if req.start_time is not None:
+                    service_time = req.completion_time - req.start_time
+                    self.service_times.append(service_time)
                 self.completed_requests.append(req)
 
     def decide_batch_size(self) -> BatchDecision:
@@ -107,14 +115,21 @@ class AdaptiveBatcher:
             BatchDecision with recommended batch size
         """
         current_time = time.time()
-        recent_arrivals = [t for t in self.arrival_times
-                          if current_time - t <= self.window_size]
+        recent_arrivals = [
+            t for t in self.arrival_times if current_time - t <= self.window_size
+        ]
 
-        lambda_rate = len(recent_arrivals) / self.window_size if self.window_size > 0 else 0
+        lambda_rate = (
+            len(recent_arrivals) / self.window_size if self.window_size > 0 else 0
+        )
 
-        recent_services = [t for t in self.service_times
-                           if current_time - t <= self.window_size]
-        mu_rate = len(recent_services) / sum(recent_services) if recent_services else 0
+        recent_services = [
+            t for t in self.service_times if current_time - t <= self.window_size
+        ]
+        avg_service_time = (
+            sum(recent_services) / len(recent_services) if recent_services else 0
+        )
+        mu_rate = 1.0 / avg_service_time if avg_service_time > 0 else 1.0
 
         if mu_rate == 0:
             mu_rate = 1.0
@@ -133,7 +148,7 @@ class AdaptiveBatcher:
             timestamp=current_time,
             lambda_rate=lambda_rate,
             mu_rate=mu_rate,
-            queue_length=len(self.request_queue)
+            queue_length=len(self.request_queue),
         )
 
     def get_stats(self) -> Dict[str, Any]:
@@ -145,21 +160,28 @@ class AdaptiveBatcher:
         """
         with self.lock:
             current_time = time.time()
-            recent_arrivals = [t for t in self.arrival_times
-                              if current_time - t <= self.window_size]
-            recent_services = [t for t in self.service_times
-                               if current_time - t <= self.window_size]
+            recent_arrivals = [
+                t for t in self.arrival_times if current_time - t <= self.window_size
+            ]
+            recent_services = [
+                t for t in self.service_times if current_time - t <= self.window_size
+            ]
 
-            lambda_rate = len(recent_arrivals) / self.window_size if self.window_size > 0 else 0
-            mu_rate = len(recent_services) / sum(recent_services) if recent_services else 0
+            lambda_rate = (
+                len(recent_arrivals) / self.window_size if self.window_size > 0 else 0
+            )
+            avg_service_time = (
+                sum(recent_services) / len(recent_services) if recent_services else 0
+            )
+            mu_rate = 1.0 / avg_service_time if avg_service_time > 0 else 1.0
 
             return {
-                'queue_length': len(self.request_queue),
-                'total_completed': len(self.completed_requests),
-                'arrival_rate': lambda_rate,
-                'service_rate': mu_rate,
-                'rho': lambda_rate / mu_rate if mu_rate > 0 else 0,
-                'batch_decision': self.decide_batch_size().__dict__
+                "queue_length": len(self.request_queue),
+                "total_completed": len(self.completed_requests),
+                "arrival_rate": lambda_rate,
+                "service_rate": mu_rate,
+                "rho": lambda_rate / mu_rate if mu_rate > 0 else 0,
+                "batch_decision": self.decide_batch_size().__dict__,
             }
 
     def reset(self):
@@ -186,7 +208,7 @@ class AdaptiveBatcher:
             request = Request(
                 request_id=i,
                 arrival_time=current_time + i * arrival_interval,
-                seq_length=128 + (i % 256)
+                seq_length=128 + (i % 256),
             )
             self.add_request(request)
 

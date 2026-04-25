@@ -1,0 +1,29 @@
+{
+  "deps": [
+    "import:[sys]",
+    "import:[os]",
+    "import:[unittest]",
+    "import:[pagedAttention]"
+  ],
+  "file": "../tests/test_block_table.py",
+  "hash": "3bdf0d16bb0d6c40bd34ef9c75f6c22ae9d62e389b80ab04c524c65275849983",
+  "lang": "PY",
+  "symbols": [
+    {
+      "attrs": {},
+      "kind": "class",
+      "name": "TestBlockTable"
+    },
+    {
+      "attrs": {},
+      "kind": "class",
+      "name": "TestBlock"
+    }
+  ],
+  "timestamp": "2026-04-22T13:23:12.792679",
+  "unit": {
+    "module": "tests",
+    "role": "lib"
+  },
+  "version": "pir-analyzer-v1"
+}

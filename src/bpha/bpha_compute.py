@@ -2,7 +2,7 @@
 BPHA Compute: Functional implementation of BPHA attention computation
 """
 
-from typing import Tuple, List, Optional
+from typing import List, Optional, Tuple
 import torch
 import torch.nn.functional as F
 import math
@@ -12,7 +12,7 @@ def bpha_forward(
     query: torch.Tensor,
     kv_blocks: List[Tuple[torch.Tensor, torch.Tensor]],
     block_offsets: List[int],
-    scale: Optional[float] = None
+    scale: Optional[float] = None,
 ) -> torch.Tensor:
     """
     Forward pass of Block-Paged Hybrid Attention.
@@ -26,11 +26,14 @@ def bpha_forward(
     Returns:
         Attention output [batch, q_len, d_v]
     """
+    if not kv_blocks:
+        return torch.zeros_like(query)
+
     if scale is None:
         d_k = query.shape[-1]
         scale = 1.0 / math.sqrt(d_k)
 
-    batch_size, q_len, d_v = query.shape[0], query.shape[1], kv_blocks[0][1].shape[-1] if kv_blocks else query.shape[-1]
+    batch_size, q_len, d_v = query.shape[0], query.shape[1], kv_blocks[0][1].shape[-1]
 
     output = torch.zeros(batch_size, q_len, d_v, device=query.device, dtype=query.dtype)
 
@@ -43,7 +46,7 @@ def bpha_forward(
 
         valid_tokens = min(k_block.shape[-2], q_len - offset)
         if valid_tokens > 0:
-            output[:, offset:offset + valid_tokens] += block_out[:, :valid_tokens]
+            output[:, offset : offset + valid_tokens] += block_out[:, :valid_tokens]
 
     return output
 
@@ -53,7 +56,7 @@ def bpha_backward(
     query: torch.Tensor,
     kv_blocks: List[Tuple[torch.Tensor, torch.Tensor]],
     block_offsets: List[int],
-    scale: Optional[float] = None
+    scale: Optional[float] = None,
 ) -> Tuple[torch.Tensor, List[torch.Tensor], List[torch.Tensor]]:
     """
     Backward pass of BPHA attention.
@@ -85,29 +88,50 @@ def bpha_backward(
         block_size = k_block.shape[-2]
         valid_tokens = min(block_size, q_len - offset)
 
-        attn_weights = F.softmax(
-            torch.matmul(query[:, offset:offset + valid_tokens], k_block[:, :valid_tokens].transpose(-2, -1)) * scale,
-            dim=-1
+        if valid_tokens <= 0:
+            grad_k_blocks.append(torch.zeros_like(k_block))
+            grad_v_blocks.append(torch.zeros_like(v_block))
+            continue
+
+        scores = (
+            torch.matmul(
+                query[:, offset : offset + valid_tokens],
+                k_block[:, :valid_tokens].transpose(-2, -1),
+            )
+            * scale
         )
 
-        grad_block_out = grad_output[:, offset:offset + valid_tokens]
+        attn_weights = F.softmax(scores, dim=-1)
+
+        grad_block_out = grad_output[:, offset : offset + valid_tokens]
 
         grad_v_block = torch.matmul(attn_weights.transpose(-2, -1), grad_block_out)
-        grad_weights = torch.matmul(grad_block_out, v_block[:, :valid_tokens].transpose(-2, -1))
 
-        grad_scores = grad_weights * attn_weights * (1 - attn_weights)
-        grad_scores_scaled = grad_scores * scale
+        grad_attn = torch.matmul(
+            grad_block_out, v_block[:, :valid_tokens].transpose(-2, -1)
+        )
 
-        grad_k_block = torch.matmul(grad_scores_scaled.transpose(-2, -1),
-                                    query[:, offset:offset + valid_tokens])
-        grad_q_block = torch.matmul(grad_scores_scaled, k_block[:, :valid_tokens])
+        grad_scores = attn_weights * (
+            grad_attn - (grad_attn * attn_weights).sum(dim=-1, keepdim=True)
+        )
+        grad_scores = grad_scores * scale
 
-        grad_query[:, offset:offset + valid_tokens] += grad_q_block
+        grad_k_block = torch.matmul(
+            grad_scores.transpose(-2, -1),
+            query[:, offset : offset + valid_tokens],
+        ).transpose(-2, -1)
 
-        grad_k_blocks.append(torch.zeros_like(k_block))
-        grad_k_blocks[-1][:, :valid_tokens] = grad_k_block
-        grad_v_blocks.append(torch.zeros_like(v_block))
-        grad_v_blocks[-1][:, :valid_tokens] = grad_v_block
+        grad_q_block = torch.matmul(grad_scores, k_block[:, :valid_tokens])
+
+        grad_query[:, offset : offset + valid_tokens] += grad_q_block
+
+        full_grad_k = torch.zeros_like(k_block)
+        full_grad_k[:, :valid_tokens] = grad_k_block
+        grad_k_blocks.append(full_grad_k)
+
+        full_grad_v = torch.zeros_like(v_block)
+        full_grad_v[:, :valid_tokens] = grad_v_block
+        grad_v_blocks.append(full_grad_v)
 
     return grad_query, grad_k_blocks, grad_v_blocks
 

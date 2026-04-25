@@ -4,15 +4,17 @@ Blocked Tensor: Compiler-friendly blocked tensor representation
 
 from typing import Tuple, Optional, List
 from dataclasses import dataclass
+import itertools
 import numpy as np
 
 
 @dataclass
 class LayoutConstraint:
     """Describes constraints on tensor layout for compiler optimization."""
+
     alignment: int = 16
-    contiguity: str = 'non-contiguous'
-    access_pattern: str = 'blocked-random'
+    contiguity: str = "non-contiguous"
+    access_pattern: str = "blocked-random"
     prefer_blocked: bool = True
 
 
@@ -31,7 +33,7 @@ class BlockedTensor:
         base_shape: Tuple[int, ...],
         block_size: Tuple[int, ...],
         block_map: Optional[List[int]] = None,
-        data: Optional[np.ndarray] = None
+        data: Optional[np.ndarray] = None,
     ):
         """
         Initialize BlockedTensor.
@@ -44,7 +46,7 @@ class BlockedTensor:
         """
         self.base_shape = base_shape
         self.block_size = block_size
-        self.block_map = block_map or list(range(self._num_blocks))
+        self.block_map = block_map or list(range(self._num_blocks()))
         self.layout_constraint = LayoutConstraint()
 
         if data is not None:
@@ -59,6 +61,11 @@ class BlockedTensor:
             block_dim = self.block_size[dim]
             num_blocks *= (size + block_dim - 1) // block_dim
         return num_blocks
+
+    @property
+    def num_blocks(self) -> int:
+        """Number of blocks in tensor."""
+        return self._num_blocks()
 
     def _total_elements(self) -> int:
         """Total number of elements in tensor."""
@@ -78,7 +85,9 @@ class BlockedTensor:
         Returns:
             Block data as numpy array
         """
-        physical_idx = self.block_map[block_idx] if block_idx < len(self.block_map) else block_idx
+        physical_idx = (
+            self.block_map[block_idx] if block_idx < len(self.block_map) else block_idx
+        )
 
         block_elements = int(np.prod(self.block_size))
         start = physical_idx * block_elements
@@ -95,7 +104,9 @@ class BlockedTensor:
             block_idx: Logical block index
             block_data: Data to store in block
         """
-        physical_idx = self.block_map[block_idx] if block_idx < len(self.block_map) else block_idx
+        physical_idx = (
+            self.block_map[block_idx] if block_idx < len(self.block_map) else block_idx
+        )
 
         block_elements = int(np.prod(self.block_size))
         start = physical_idx * block_elements
@@ -104,7 +115,9 @@ class BlockedTensor:
         flat_block = block_data.flatten()
         self.data[start:end] = flat_block[:block_elements]
 
-    def get_logical_index(self, block_idx: int, within_block_idx: Tuple[int, ...]) -> Tuple[int, ...]:
+    def get_logical_index(
+        self, block_idx: int, within_block_idx: Tuple[int, ...]
+    ) -> Tuple[int, ...]:
         """
         Convert block index to logical tensor index.
 
@@ -115,13 +128,26 @@ class BlockedTensor:
         Returns:
             Logical tensor index
         """
-        num_block_dims = len(self.block_size)
+        num_dims = len(self.base_shape)
         logical_idx = []
+        temp_block_idx = block_idx
 
-        for dim in range(num_block_dims):
-            block_dim_size = (self.base_shape[dim] + self.block_size[dim] - 1) // self.block_size[dim]
-            block_coord = (block_idx % (num_block_dims * block_dim_size)) // block_dim_size
-            logical_idx.append(block_coord * self.block_size[dim] + within_block_idx[dim])
+        for dim in range(num_dims):
+            blocks_per_dim = (
+                self.base_shape[dim] + self.block_size[dim] - 1
+            ) // self.block_size[dim]
+
+            blocks_per_higher_dims = 1
+            for higher_dim in range(dim + 1, num_dims):
+                higher_blocks = (
+                    self.base_shape[higher_dim] + self.block_size[higher_dim] - 1
+                ) // self.block_size[higher_dim]
+                blocks_per_higher_dims *= higher_blocks
+
+            block_coord = (temp_block_idx // blocks_per_higher_dims) % blocks_per_dim
+            logical_idx.append(
+                block_coord * self.block_size[dim] + within_block_idx[dim]
+            )
 
         return tuple(logical_idx)
 
@@ -137,18 +163,33 @@ class BlockedTensor:
         """
         block_idx = 0
         offset = 0
+        num_dims = len(self.base_shape)
+        block_strides = [1] * num_dims
+
+        for dim in range(num_dims - 2, -1, -1):
+            blocks_in_dim = (
+                self.base_shape[dim + 1] + self.block_size[dim + 1] - 1
+            ) // self.block_size[dim + 1]
+            block_strides[dim] = block_strides[dim + 1] * blocks_in_dim
 
         for dim, idx in enumerate(logical_index):
-            block_dim_size = (self.base_shape[dim] + self.block_size[dim] - 1) // self.block_size[dim]
             block_coord = idx // self.block_size[dim]
             offset_in_dim = idx % self.block_size[dim]
 
-            block_idx = block_idx * block_dim_size + block_coord
+            block_idx += block_coord * block_strides[dim]
 
-            block_row_size = int(np.prod(self.block_size[dim+1:]))
-            offset += offset_in_dim * block_row_size
+        offset_within_block = 0
+        block_element_strides = [1] * num_dims
+        for dim in range(num_dims - 2, -1, -1):
+            block_element_strides[dim] = (
+                block_element_strides[dim + 1] * self.block_size[dim + 1]
+            )
 
-        return block_idx, offset
+        for dim, idx in enumerate(logical_index):
+            offset_in_dim = idx % self.block_size[dim]
+            offset_within_block += offset_in_dim * block_element_strides[dim]
+
+        return block_idx, offset_within_block
 
     def get_layout_info(self) -> dict:
         """
@@ -158,22 +199,24 @@ class BlockedTensor:
             Dictionary with layout metadata
         """
         return {
-            'base_shape': self.base_shape,
-            'block_size': self.block_size,
-            'num_blocks': self._num_blocks(),
-            'total_elements': self._total_elements(),
-            'constraint': {
-                'alignment': self.layout_constraint.alignment,
-                'contiguity': self.layout_constraint.contiguity,
-                'access_pattern': self.layout_constraint.access_pattern,
-                'prefer_blocked': self.layout_constraint.prefer_blocked
-            }
+            "base_shape": self.base_shape,
+            "block_size": self.block_size,
+            "num_blocks": self._num_blocks(),
+            "total_elements": self._total_elements(),
+            "constraint": {
+                "alignment": self.layout_constraint.alignment,
+                "contiguity": self.layout_constraint.contiguity,
+                "access_pattern": self.layout_constraint.access_pattern,
+                "prefer_blocked": self.layout_constraint.prefer_blocked,
+            },
         }
 
     def __repr__(self) -> str:
-        return (f"BlockedTensor(shape={self.base_shape}, "
-                f"block_size={self.block_size}, "
-                f"blocks={self._num_blocks()})")
+        return (
+            f"BlockedTensor(shape={self.base_shape}, "
+            f"block_size={self.block_size}, "
+            f"blocks={self._num_blocks()})"
+        )
 
 
 class BlockedTensorView:
@@ -181,7 +224,12 @@ class BlockedTensorView:
     View of a blocked tensor with sliced access patterns.
     """
 
-    def __init__(self, tensor: BlockedTensor, start_idx: Tuple[int, ...], end_idx: Tuple[int, ...]):
+    def __init__(
+        self,
+        tensor: BlockedTensor,
+        start_idx: Tuple[int, ...],
+        end_idx: Tuple[int, ...],
+    ):
         """
         Create a view of blocked tensor.
 
@@ -208,12 +256,14 @@ class BlockedTensorView:
 
     def _is_in_range(self, logical_idx: Tuple[int, ...]) -> bool:
         """Check if logical index is within view range."""
-        return all(s <= idx < e for s, idx, e in zip(self.start_idx, logical_idx, self.end_idx))
+        return all(
+            s <= idx < e for s, idx, e in zip(self.start_idx, logical_idx, self.end_idx)
+        )
 
     def _iter_within_block(self, block_idx: int):
         """Iterate over valid indices within a block."""
         block_shape = self.tensor.block_size
-        import itertools
+
         for idx in itertools.product(*[range(s) for s in block_shape]):
             yield idx
 

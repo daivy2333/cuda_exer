@@ -31,10 +31,10 @@ class PagedAttention:
     def forward(
         self,
         query: torch.Tensor,
-        block_table: 'BlockTable',
+        block_table: "BlockTable",
         seq_id: int,
         num_tokens: int,
-        past_kv: Optional[Tuple[torch.Tensor, torch.Tensor]] = None
+        past_kv: Optional[Tuple[torch.Tensor, torch.Tensor]] = None,
     ) -> Tuple[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
         """
         Compute attention with paged KV cache.
@@ -53,12 +53,11 @@ class PagedAttention:
         batch_size, q_len, d_k = query.shape
         d_v = d_k
 
-        if self.scale is None:
-            self.scale = 1.0 / (d_k ** 0.5)
+        scale = self.scale if self.scale is not None else 1.0 / (d_k**0.5)
 
         all_k, all_v = self._gather_kv(block_table, seq_id, num_tokens, past_kv)
 
-        scores = torch.matmul(query, all_k.transpose(-2, -1)) * self.scale
+        scores = torch.matmul(query, all_k.transpose(-2, -1)) * scale
 
         attn_weights = F.softmax(scores, dim=-1)
 
@@ -68,10 +67,10 @@ class PagedAttention:
 
     def _gather_kv(
         self,
-        block_table: 'BlockTable',
+        block_table: "BlockTable",
         seq_id: int,
         num_tokens: int,
-        past_kv: Optional[Tuple[torch.Tensor, torch.Tensor]]
+        past_kv: Optional[Tuple[torch.Tensor, torch.Tensor]],
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         Gather KV tensors from paged blocks.
@@ -114,7 +113,6 @@ class PagedAttention:
             all_k = all_k.reshape(-1, all_k.shape[-1]).unsqueeze(0)
             all_v = all_v.reshape(-1, all_v.shape[-1]).unsqueeze(0)
         else:
-            d_k = int(self.scale ** -2) if self.scale else 64
             all_k = torch.zeros(1, num_tokens, d_k)
             all_v = torch.zeros(1, num_tokens, d_k)
 
@@ -123,11 +121,11 @@ class PagedAttention:
 
 def compare_with_standard_attention(
     paged_attn: PagedAttention,
-    block_table: 'BlockTable',
+    block_table: "BlockTable",
     seq_id: int,
     num_tokens: int,
     d_k: int = 64,
-    seed: int = 42
+    seed: int = 42,
 ) -> Tuple[float, torch.Tensor, torch.Tensor]:
     """
     Compare PagedAttention output with standard attention.
@@ -154,13 +152,23 @@ def compare_with_standard_attention(
 
     for i, block_id in enumerate(block_table.get_block_ids(seq_id)):
         block = block_table.physical_blocks[block_id]
-        tokens_in_block = min(block_table.block_size, num_tokens - i * block_table.block_size)
+        tokens_in_block = min(
+            block_table.block_size, num_tokens - i * block_table.block_size
+        )
         if block.k_data is not None:
-            block.k_data[:tokens_in_block] = k[0, i*block_table.block_size:i*block_table.block_size+tokens_in_block].numpy()
-            block.v_data[:tokens_in_block] = v[0, i*block_table.block_size:i*block_table.block_size+tokens_in_block].numpy()
+            block.k_data[:tokens_in_block] = k[
+                0,
+                i * block_table.block_size : i * block_table.block_size
+                + tokens_in_block,
+            ].numpy()
+            block.v_data[:tokens_in_block] = v[
+                0,
+                i * block_table.block_size : i * block_table.block_size
+                + tokens_in_block,
+            ].numpy()
             block.tokens = [0] * tokens_in_block
 
-    scale = 1.0 / (d_k ** 0.5)
+    scale = 1.0 / (d_k**0.5)
     scores = torch.matmul(q, k.transpose(-2, -1)) * scale
     standard_output = torch.matmul(F.softmax(scores, dim=-1), v)
 

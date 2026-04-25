@@ -1,0 +1,28 @@
+{
+  "deps": [
+    "import:[typing]",
+    "import:[dataclasses]",
+    "import:[math]"
+  ],
+  "file": "../src/dynamicBatching/queue_model.py",
+  "hash": "186d1289a74af4386f3f50ba28966fb5473d316604680c499d7c68491e1272aa",
+  "lang": "PY",
+  "symbols": [
+    {
+      "attrs": {},
+      "kind": "class",
+      "name": "QueueStats"
+    },
+    {
+      "attrs": {},
+      "kind": "class",
+      "name": "M1M1Queue"
+    }
+  ],
+  "timestamp": "2026-04-22T13:23:12.801858",
+  "unit": {
+    "module": "dynamicBatching",
+    "role": "lib"
+  },
+  "version": "pir-analyzer-v1"
+}

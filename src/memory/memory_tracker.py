@@ -4,13 +4,17 @@ Memory Tracker: Tracks and reports memory usage
 
 from typing import Dict, Optional, List
 from dataclasses import dataclass, field
+from collections import deque
 import time
 import psutil
+
+MAX_HISTORY_SIZE = 10000
 
 
 @dataclass
 class MemoryStats:
     """Memory usage statistics."""
+
     timestamp: float
     allocated_bytes: int
     reserved_bytes: int
@@ -41,7 +45,7 @@ class MemoryTracker:
         self.peak_bytes = 0
         self.num_allocations = 0
         self.num_frees = 0
-        self.allocation_history: List[Dict] = []
+        self.allocation_history: deque = deque(maxlen=MAX_HISTORY_SIZE)
         self.start_time = time.time()
 
         try:
@@ -61,13 +65,15 @@ class MemoryTracker:
         self.num_allocations += 1
         self.peak_bytes = max(self.peak_bytes, self.allocated_bytes)
 
-        self.allocation_history.append({
-            'type': 'alloc',
-            'size': size_bytes,
-            'tag': tag,
-            'timestamp': time.time(),
-            'total': self.allocated_bytes
-        })
+        self.allocation_history.append(
+            {
+                "type": "alloc",
+                "size": size_bytes,
+                "tag": tag,
+                "timestamp": time.time(),
+                "total": self.allocated_bytes,
+            }
+        )
 
     def free(self, size_bytes: int, tag: str = ""):
         """
@@ -80,13 +86,15 @@ class MemoryTracker:
         self.allocated_bytes = max(0, self.allocated_bytes - size_bytes)
         self.num_frees += 1
 
-        self.allocation_history.append({
-            'type': 'free',
-            'size': size_bytes,
-            'tag': tag,
-            'timestamp': time.time(),
-            'total': self.allocated_bytes
-        })
+        self.allocation_history.append(
+            {
+                "type": "free",
+                "size": size_bytes,
+                "tag": tag,
+                "timestamp": time.time(),
+                "total": self.allocated_bytes,
+            }
+        )
 
     def get_current_stats(self) -> MemoryStats:
         """
@@ -106,7 +114,7 @@ class MemoryTracker:
             num_allocations=self.num_allocations,
             num_frees=self.num_frees,
             fragmentation=fragmentation,
-            utilization=utilization
+            utilization=utilization,
         )
 
     def _compute_fragmentation(self) -> float:
@@ -119,19 +127,18 @@ class MemoryTracker:
         if self.num_allocations == 0:
             return 0.0
 
-        recent_allocs = [h for h in self.allocation_history[-100:]
-                       if h['type'] == 'alloc']
-        recent_frees = [h for h in self.allocation_history[-100:]
-                       if h['type'] == 'free']
+        recent_history = list(self.allocation_history)[-100:]
+        recent_allocs = [h for h in recent_history if h["type"] == "alloc"]
+        recent_frees = [h for h in recent_history if h["type"] == "free"]
 
         if not recent_frees:
             return 0.0
 
-        freed = sum(h['size'] for h in recent_frees)
+        freed = sum(h["size"] for h in recent_frees)
         if freed == 0:
             return 0.0
 
-        holes = abs(sum(h['size'] for h in recent_allocs) - freed) / freed
+        holes = abs(sum(h["size"] for h in recent_allocs) - freed) / freed
         return min(1.0, holes)
 
     def _compute_utilization(self) -> float:
@@ -159,11 +166,11 @@ class MemoryTracker:
         sys_mem = psutil.virtual_memory()
 
         return {
-            'rss_mb': mem_info.rss / (1024 * 1024),
-            'vms_mb': mem_info.vms / (1024 * 1024),
-            'system_total_mb': sys_mem.total / (1024 * 1024),
-            'system_available_mb': sys_mem.available / (1024 * 1024),
-            'system_used_percent': sys_mem.percent
+            "rss_mb": mem_info.rss / (1024 * 1024),
+            "vms_mb": mem_info.vms / (1024 * 1024),
+            "system_total_mb": sys_mem.total / (1024 * 1024),
+            "system_available_mb": sys_mem.available / (1024 * 1024),
+            "system_used_percent": sys_mem.percent,
         }
 
     def reset(self):
@@ -173,7 +180,7 @@ class MemoryTracker:
         self.peak_bytes = 0
         self.num_allocations = 0
         self.num_frees = 0
-        self.allocation_history.clear()
+        self.allocation_history = deque(maxlen=MAX_HISTORY_SIZE)
         self.start_time = time.time()
 
     def print_summary(self):
@@ -183,8 +190,8 @@ class MemoryTracker:
 
         print(f"\n=== Memory Tracker: {self.name} ===")
         print(f"Allocations: {stats.num_allocations} allocs, {stats.num_frees} frees")
-        print(f"Current: {stats.allocated_bytes / (1024*1024):.2f} MB")
-        print(f"Peak: {stats.peak_bytes / (1024*1024):.2f} MB")
+        print(f"Current: {stats.allocated_bytes / (1024 * 1024):.2f} MB")
+        print(f"Peak: {stats.peak_bytes / (1024 * 1024):.2f} MB")
         print(f"Fragmentation: {stats.fragmentation:.2%}")
         print(f"Utilization: {stats.utilization:.2%}")
 
@@ -194,6 +201,8 @@ class MemoryTracker:
             print(f"  System used: {sys_mem.get('system_used_percent', 0):.1f}%")
 
     def __repr__(self) -> str:
-        return (f"MemoryTracker(name='{self.name}', "
-                f"allocated={self.allocated_bytes / (1024*1024):.2f}MB, "
-                f"peak={self.peak_bytes / (1024*1024):.2f}MB)")
+        return (
+            f"MemoryTracker(name='{self.name}', "
+            f"allocated={self.allocated_bytes / (1024 * 1024):.2f}MB, "
+            f"peak={self.peak_bytes / (1024 * 1024):.2f}MB)"
+        )

@@ -1,0 +1,37 @@
+{
+  "deps": [
+    "import:[sys]",
+    "import:[os]",
+    "import:[time]",
+    "import:[numpy]",
+    "import:[torch]",
+    "import:[torch.nn.functional]",
+    "import:[bpha]"
+  ],
+  "file": "../benchmarks/bpha_benchmark.py",
+  "hash": "5e77e1b5f2ccea9d637a79d0578eede70ea82fcb9e7718e270a4f1f893a2d3c6",
+  "lang": "PY",
+  "symbols": [
+    {
+      "attrs": {},
+      "kind": "func",
+      "name": "standard_attention"
+    },
+    {
+      "attrs": {},
+      "kind": "func",
+      "name": "test_correctness"
+    },
+    {
+      "attrs": {},
+      "kind": "func",
+      "name": "benchmark_throughput"
+    }
+  ],
+  "timestamp": "2026-04-22T13:23:12.817958",
+  "unit": {
+    "module": "benchmarks",
+    "role": "lib"
+  },
+  "version": "pir-analyzer-v1"
+}

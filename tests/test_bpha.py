@@ -62,7 +62,7 @@ class TestBPHAOperator(unittest.TestCase):
         k = torch.randn(1, self.block_size, self.hidden_dim)
         v = torch.randn(1, self.block_size, self.hidden_dim)
 
-        output, _ = self.op.forward(query, [(k, v)], [0])
+        output = self.op.forward(query, [(k, v)], [0])
 
         self.assertFalse(torch.isnan(output).any())
         self.assertFalse(torch.isinf(output).any())

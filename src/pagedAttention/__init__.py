@@ -4,7 +4,7 @@ Paged Attention Module
 Implements memory-efficient KV Cache management using block-paging.
 """
 
-from .block_table import BlockTable
+from .block_table import BlockTable, Block
 from .paged_memory import PagedMemoryManager
 from .paged_attention import PagedAttention
 

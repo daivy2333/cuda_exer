@@ -1,0 +1,29 @@
+{
+  "deps": [
+    "import:[typing]",
+    "import:[numpy]",
+    "import:[torch]",
+    "import:[torch.nn.functional]"
+  ],
+  "file": "../src/pagedAttention/paged_attention.py",
+  "hash": "67aa3dfb728c718dda63e7a51854d2476dabe4ea53c4ba1c1688784f7d4760f3",
+  "lang": "PY",
+  "symbols": [
+    {
+      "attrs": {},
+      "kind": "class",
+      "name": "PagedAttention"
+    },
+    {
+      "attrs": {},
+      "kind": "func",
+      "name": "compare_with_standard_attention"
+    }
+  ],
+  "timestamp": "2026-04-22T13:23:12.810310",
+  "unit": {
+    "module": "pagedAttention",
+    "role": "lib"
+  },
+  "version": "pir-analyzer-v1"
+}

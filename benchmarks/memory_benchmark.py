@@ -6,7 +6,8 @@ Compares memory fragmentation between contiguous and paged allocation.
 
 import sys
 import os
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 import time
 import numpy as np
@@ -78,15 +79,21 @@ def benchmark_fragmentation():
         paged_frag = 1 - (total_tokens / total_capacity) if total_capacity > 0 else 0
         print(f"  Paged fragmentation: {paged_frag:.2%}")
 
-        improvement = (contiguous_frag - paged_frag) / contiguous_frag if contiguous_frag > 0 else 0
+        improvement = (
+            (contiguous_frag - paged_frag) / contiguous_frag
+            if contiguous_frag > 0
+            else 0
+        )
         print(f"  Improvement: {improvement:.1%}")
 
-        results.append({
-            'scenario': scenario_name,
-            'contiguous_frag': contiguous_frag,
-            'paged_frag': paged_frag,
-            'improvement': improvement
-        })
+        results.append(
+            {
+                "scenario": scenario_name,
+                "contiguous_frag": contiguous_frag,
+                "paged_frag": paged_frag,
+                "improvement": improvement,
+            }
+        )
 
     print("\n" + "=" * 70)
     print("Summary Table")
@@ -95,7 +102,9 @@ def benchmark_fragmentation():
     print("-" * 70)
 
     for r in results:
-        print(f"{r['scenario']:<20} {r['contiguous_frag']:>10.2%} {r['paged_frag']:>10.2%} {r['improvement']:>10.1%}")
+        print(
+            f"{r['scenario']:<20} {r['contiguous_frag']:>10.2%} {r['paged_frag']:>10.2%} {r['improvement']:>10.1%}"
+        )
 
 
 def benchmark_alloc_free(num_iterations=1000):
@@ -118,8 +127,8 @@ def benchmark_alloc_free(num_iterations=1000):
         seq_id = i % 10
         try:
             bt.free(seq_id)
-        except:
-            pass
+        except RuntimeError:
+            pass  # Sequence may not exist yet, which is expected
         bt.allocate(seq_id=seq_id, num_tokens=seq_length)
 
     elapsed = time.time() - start
@@ -128,7 +137,7 @@ def benchmark_alloc_free(num_iterations=1000):
     print(f"\nResults:")
     print(f"  Total time: {elapsed:.3f}s")
     print(f"  Operations/sec: {ops_per_sec:.0f}")
-    print(f"  Avg time per alloc+free: {elapsed/num_iterations*1000:.4f}ms")
+    print(f"  Avg time per alloc+free: {elapsed / num_iterations * 1000:.4f}ms")
 
 
 if __name__ == "__main__":

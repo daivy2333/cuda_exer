@@ -1,12 +1,10 @@
 # Project Documentation
 
-## 1. Project Overview
+## 1. Overview
 
-**Project Name**: CUDA Exercise - Paged Attention & 2.5-D Tensor Parallelism
-
-**Objective**: Implement and verify key algorithms from the paper "2.5-D Tensor Parallelism with Compiler-aware Paged Attention" in a single-GPU (8GB VRAM) environment.
-
-**Target Users**: Researchers and engineers studying LLM inference optimization.
+**Project**: CUDA Exercise - Paged Attention & 2.5-D Tensor Parallelism
+**Goal**: Implement key algorithms from "2.5-D Tensor Parallelism with Compiler-aware Paged Attention" for single-GPU (8GB VRAM).
+**Audience**: Researchers and engineers studying LLM inference optimization.
 
 ---
 
@@ -15,67 +13,46 @@
 ### 2.1 Module Dependencies
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                        User Applications                        │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐           │
-│  │   Examples   │  │  Benchmarks  │  │    Tests     │           │
-│  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘           │
-│         │                 │                 │                     │
-│         ▼                 ▼                 ▼                     │
-│  ┌─────────────────────────────────────────────────────────┐   │
-│  │                      Core Modules                         │   │
-│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐      │   │
-│  │  │pagedAttention│  │     bpha    │  │dynamicBatching│    │   │
-│  │  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘      │   │
-│  │         │                │                │               │   │
-│  │         └────────────────┼────────────────┘               │   │
-│  │                          ▼                                │   │
-│  │  ┌─────────────────────────────────────────────────┐    │   │
-│  │  │              blockedTensor (shared)              │    │   │
-│  │  └─────────────────────────────────────────────────┘    │   │
-│  │                          │                                │   │
-│  └──────────────────────────┼────────────────────────────────┘   │
-│                             ▼                                      │
-│  ┌─────────────────────────────────────────────────────────────┐ │
-│  │                    memory (shared)                          │ │
-│  └─────────────────────────────────────────────────────────────┘ │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
+User Applications
+       ↓
+┌─────────────────────────────────────────────────────────┐
+│                    Core Modules                          │
+│                                                          │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐       │
+│  │pagedAttention│  │     bpha    │  │dynamicBatching│    │
+│  └──────┬──────┘  └──────┬──────┘  └─────────────┘       │
+│         │                │                               │
+│         └────────────────┼───────────────────────────── │   │
+│                          ↓                               │   │
+│  ┌─────────────────────────────────────────────────┐    │   │
+│  │              blockedTensor                       │────┘   │
+│  └─────────────────────────────────────────────────┘        │
+│                          ↓                                 │
+│  ┌─────────────────────────────────────────────────┐        │
+│  │                    memory                        │        │
+│  └─────────────────────────────────────────────────┘        │
+└─────────────────────────────────────────────────────────┘
 ```
 
-### 2.2 Core Components
+### 2.2 Module Summary
 
-| Module | Purpose | Dependencies |
-|--------|---------|-------------|
-| `pagedAttention` | KV Cache block-paging | `memory` |
-| `bpha` | Block-paged hybrid attention | `blockedTensor` |
-| `dynamicBatching` | Adaptive batch processing | None |
-| `blockedTensor` | Compiler-friendly tensors | None |
-| `memory` | Memory tracking and allocation | None |
+| Module | Purpose | File(s) |
+|--------|---------|---------|
+| `pagedAttention` | KV Cache block-paging | `block_table.py`, `paged_memory.py`, `paged_attention.py` |
+| `bpha` | Block-paged hybrid attention | `bpha_operator.py`, `bpha_compute.py` |
+| `dynamicBatching` | Adaptive batch processing | `adaptive_batcher.py`, `queue_model.py` |
+| `blockedTensor` | Compiler-friendly tensors | `blocked_tensor.py`, `layout.py` |
+| `memory` | Memory tracking/allocation | `memory_tracker.py`, `allocator.py` |
 
 ---
 
-## 3. Module Specifications
+## 3. API Reference
 
-### 3.1 pagedAttention Module
-
-**Purpose**: Memory-efficient KV Cache management using block-paging strategy.
-
-**Components**:
-
-| File | Class/Function | Description |
-|------|---------------|-------------|
-| `block_table.py` | `BlockTable` | Maps logical sequence blocks to physical memory blocks |
-| `block_table.py` | `Block` | Physical block data structure |
-| `paged_memory.py` | `PagedMemoryManager` | Manages KV Cache with paged allocation |
-| `paged_attention.py` | `PagedAttention` | Attention computation over paged KV |
-| `paged_attention.py` | `compare_with_standard_attention` | Verification function |
-
-**Key APIs**:
+### 3.1 pagedAttention
 
 ```python
+from pagedAttention import BlockTable, PagedMemoryManager, PagedAttention
+
 # BlockTable
 bt = BlockTable(block_size=16, num_blocks=100)
 block_ids = bt.allocate(seq_id=1, num_tokens=50)
@@ -92,23 +69,12 @@ pa = PagedAttention(block_size=16)
 output, new_kv = pa.forward(query, block_table, seq_id=1, num_tokens=50)
 ```
 
-### 3.2 bpha Module
-
-**Purpose**: Block-Paged Hybrid Attention operator implementation.
-
-**Components**:
-
-| File | Class/Function | Description |
-|------|---------------|-------------|
-| `bpha_operator.py` | `BPHAOperator` | Main attention operator |
-| `bpha_compute.py` | `bpha_forward` | Forward pass function |
-| `bpha_compute.py` | `bpha_backward` | Backward pass function |
-| `bpha_compute.py` | `compute_memory_efficiency` | Efficiency calculation |
-
-**Key APIs**:
+### 3.2 bpha
 
 ```python
-# BPHAOperator
+from bpha import BPHAOperator, bpha_forward, bpha_backward
+
+# Class-based
 op = BPHAOperator(hidden_dim=64, num_heads=1, block_size=16)
 output = op.forward(query, kv_blocks=[(k1, v1), (k2, v2)], block_offsets=[0, 16])
 
@@ -117,29 +83,16 @@ output = bpha_forward(query, [(k1, v1), (k2, v2)], [0, 16])
 grad_q, grad_k, grad_v = bpha_backward(grad_out, query, kv_blocks, offsets)
 ```
 
-### 3.3 dynamicBatching Module
-
-**Purpose**: Adaptive batch processing based on queuing theory.
-
-**Components**:
-
-| File | Class/Function | Description |
-|------|---------------|-------------|
-| `adaptive_batcher.py` | `Request` | Request data class |
-| `adaptive_batcher.py` | `BatchDecision` | Batch decision data class |
-| `adaptive_batcher.py` | `AdaptiveBatcher` | Dynamic batch processor |
-| `queue_model.py` | `QueueStats` | Queue statistics data class |
-| `queue_model.py` | `M1M1Queue` | M/M/1 queue model |
-
-**Key APIs**:
+### 3.3 dynamicBatching
 
 ```python
+from dynamicBatching import AdaptiveBatcher, M1M1Queue, Request
+
 # AdaptiveBatcher
 batcher = AdaptiveBatcher(max_batch_size=8, latency_target=0.2)
 batcher.add_request(Request(...))
 batch = batcher.get_batch()
 batcher.complete_batch(batch)
-stats = batcher.get_stats()
 
 # M/M/1 Queue
 queue = M1M1Queue(arrival_rate=10.0, service_rate=15.0)
@@ -147,137 +100,41 @@ stats = queue.get_stats()
 optimal_batch = queue.optimal_batch_size(target_latency=0.2)
 ```
 
-### 3.4 blockedTensor Module
-
-**Purpose**: Compiler-friendly tensor representation with block structure.
-
-**Components**:
-
-| File | Class/Function | Description |
-|------|---------------|-------------|
-| `blocked_tensor.py` | `LayoutConstraint` | Layout constraint metadata |
-| `blocked_tensor.py` | `BlockedTensor` | Main blocked tensor class |
-| `blocked_tensor.py` | `BlockedTensorView` | View with sliced access |
-| `layout.py` | `TensorLayout` | Layout metadata container |
-| `layout.py` | `ContiguityType` | Contiguity enum |
-| `layout.py` | `AccessPattern` | Access pattern enum |
-
-**Key APIs**:
+### 3.4 blockedTensor
 
 ```python
+from blockedTensor import BlockedTensor, TensorLayout
+
 # BlockedTensor
 bt = BlockedTensor(base_shape=(1024, 64), block_size=(16, 16))
 bt.set_block(0, block_data)
 data = bt.get_block(0)
-layout_info = bt.get_layout_info()
 
 # TensorLayout
 layout = TensorLayout.from_tensor(tensor, block_size=(16, 16))
 cache_score = layout.estimate_cache_friendliness()
 ```
 
-### 3.5 memory Module
-
-**Purpose**: Memory tracking and block allocation.
-
-**Components**:
-
-| File | Class/Function | Description |
-|------|---------------|-------------|
-| `memory_tracker.py` | `MemoryStats` | Memory statistics data class |
-| `memory_tracker.py` | `MemoryTracker` | Memory usage tracker |
-| `allocator.py` | `Allocation` | Allocation data class |
-| `allocator.py` | `BlockAllocator` | Fixed-size block allocator |
-
-**Key APIs**:
+### 3.5 memory
 
 ```python
+from memory import MemoryTracker, BlockAllocator
+
 # MemoryTracker
 tracker = MemoryTracker(name="kv_cache")
 tracker.allocate(size_bytes=1024, tag="seq_1")
-tracker.free(size_bytes=1024, tag="seq_1")
 stats = tracker.get_current_stats()
 tracker.print_summary()
 
 # BlockAllocator
 alloc = BlockAllocator(num_blocks=100, block_size=4096)
 block_ids = alloc.allocate(num_blocks_requested=5)
-alloc.free(block_ids)
 util = alloc.get_utilization()
 ```
 
 ---
 
-## 4. Data Flow
-
-### 4.1 Paged Attention Flow
-
-```
-Input Query
-    │
-    ▼
-┌─────────────────┐
-│  Block Table    │◄────────── Seq ID
-│  Lookup         │
-└────────┬────────┘
-         │
-         ▼
-┌─────────────────┐
-│ Get Physical    │
-│ Block IDs       │
-└────────┬────────┘
-         │
-         ▼
-┌─────────────────┐
-│ Gather KV from  │
-│ Physical Blocks │
-└────────┬────────┘
-         │
-         ▼
-┌─────────────────┐
-│ Compute         │
-│ Attention       │
-│ (Standard QK^T) │
-└────────┬────────┘
-         │
-         ▼
-    Output
-```
-
-### 4.2 Dynamic Batching Flow
-
-```
-Requests Arrive
-      │
-      ▼
-┌─────────────────┐
-│ M/M/1 Queue     │
-│ Model           │
-└────────┬────────┘
-         │
-         ▼
-┌─────────────────┐
-│ Calculate       │
-│ Utilization ρ    │
-└────────┬────────┘
-         │
-         ▼
-┌─────────────────┐
-│ Adjust Batch     │
-│ Size             │
-│ ρ > 0.8 → Max    │
-│ ρ < 0.5 → Min    │
-└────────┬────────┘
-         │
-         ▼
-    Process Batch
-```
-
----
-
-## 5. Configuration
-
-### 5.1 Default Configurations
+## 4. Configuration
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
@@ -287,58 +144,77 @@ Requests Arrive
 | `max_batch_size` | 8 | Maximum batch size |
 | `latency_target` | 0.2s | Target response latency |
 
-### 5.2 Configuration Files
-
-See `configs/` directory for YAML configuration files.
+See `configs/` directory for YAML files: `default.yaml`, `benchmark.yaml`, `development.yaml`.
 
 ---
 
-## 6. Testing Strategy
+## 5. Testing
 
-### 6.1 Unit Tests
+### 5.1 Unit Tests
 
-| Test | Coverage |
-|------|----------|
-| `test_block_table.py` | Allocation, free, mapping |
-| `test_paged_memory.py` | Memory stats, append |
-| `test_paged_attention.py` | Correctness vs standard |
-| `test_bpha.py` | Forward/backward pass |
-| `test_dynamic_batching.py` | Queue model calculations |
-| `test_blocked_tensor.py` | Layout, indexing |
-| `test_memory_tracker.py` | Allocation tracking |
+```bash
+python -m pytest tests/ -v
+```
 
-### 6.2 Verification Tests
+| Test File | Coverage |
+|-----------|----------|
+| `test_block_table.py` | BlockTable allocation, free, mapping |
+| `test_bpha.py` | Forward/backward pass, numerical stability |
+| `test_dynamic_batching.py` | M/M/1 formulas, batch decisions |
+| `test_memory.py` | MemoryTracker, BlockAllocator |
 
-- **Correctness**: BPHA output matches standard attention
-- **Memory Efficiency**: Fragmentation rate < 5%
-- **Queue Model**: M/M/1 formulas verified
+### 5.2 Benchmarks
+
+```bash
+python -m benchmarks.run_benchmarks
+```
+
+### 5.3 Verification Standards
+
+| Criterion | Target |
+|-----------|--------|
+| Attention correctness | max_diff < 1e-4 vs standard |
+| Memory fragmentation | < 5% |
+| Block utilization | > 95% |
+| Queue stability | ρ < 0.9 |
 
 ---
 
-## 7. Performance Metrics
+## 6. Performance
 
-### 7.1 Tracked Metrics
-
-| Metric | Target | Measurement |
-|--------|--------|-------------|
-| Memory Fragmentation | < 5% | (wasted / total) |
-| Block Utilization | > 95% | (used / allocated) |
-| Queue Stability | ρ < 0.9 | utilization |
-| Attention Correctness | max_diff < 1e-4 | vs standard |
-
-### 7.2 Benchmark Results
-
-Expected single-GPU results on 8GB VRAM:
-
-| Operation | Time | Memory |
-|-----------|------|--------|
+| Operation | Expected Time | Memory |
+|-----------|--------------|--------|
 | BlockTable alloc (1000) | ~1ms | ~1MB |
 | PagedAttention forward | ~10ms | ~100MB |
 | Dynamic batch decision | ~0.1ms | negligible |
 
 ---
 
-## 8. Extension Points
+## 7. Limitations
+
+### 7.1 Single-GPU Constraints
+
+The following paper features **cannot** be verified in single-GPU environment:
+
+| Feature | Reason |
+|---------|--------|
+| 2.5-D Tensor Parallelism | Requires NCCL/GPU interconnect |
+| Cross-GPU All-Reduce | Requires multi-GPU hardware |
+| Distributed KV Cache | Requires NVLink/PCIe |
+
+These are implemented as framework/stub code for architectural completeness.
+
+### 7.2 Workarounds
+
+| Scenario | Workaround |
+|----------|------------|
+| Large models | Use smaller models (GPT-2, TinyLlama) |
+| Long sequences | Limit to ~2048 tokens |
+| Large batch | Reduce batch_size to 8 or less |
+
+---
+
+## 8. Extending
 
 ### 8.1 Adding New Modules
 
@@ -348,15 +224,13 @@ Expected single-GPU results on 8GB VRAM:
 4. Add tests in `tests/`
 5. Add examples in `examples/`
 
-### 8.2 Multi-GPU Extensions
+### 8.2 Reference Documents
 
-The following require multi-GPU environment:
-
-- NCCL-based All-Reduce
-- Cross-GPU BlockTable
-- 2.5-D collective communication
-
-These are marked with ⚠️ in documentation.
+| Document | Purpose |
+|----------|---------|
+| `algorithm-principles.md` | Theory and algorithm explanations |
+| `examples/` | Usage examples for each module |
+| `benchmarks/` | Performance measurement scripts |
 
 ---
 
@@ -367,22 +241,15 @@ These are marked with ⚠️ in documentation.
 | KV Cache | Key-Value cache for attention computation |
 | Block Table | Mapping from logical blocks to physical blocks |
 | BPHA | Block-Paged Hybrid Attention |
-| M/M/1 | Queue model with Poisson arrivals, exponential service |
-| Utilization (ρ) | System load: arrival_rate / service_rate |
+| M/M/1 | Queue model: Poisson arrivals, exponential service |
+| Utilization (ρ) | System load = arrival_rate / service_rate |
 
 ---
 
-## 10. References
-
-1. Paper: "2.5-D Tensor Parallelism with Compiler-aware Paged Attention"
-2. vLLM: Paged Attention implementation
-3. Megatron-LM: Tensor parallelism
-4. M/M/1 Queue: Standard queuing theory
-
----
-
-## 11. Changelog
+## 10. Changelog
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 0.1.2 | 2026-04-20 | Fixed dead code in adaptive_batcher.py. Consolidated docs (one doc = one responsibility). |
+| 0.1.1 | 2026-04-20 | Bugfixes: IndexError in layout.py, deque optimizations, thread safety. |
 | 0.1.0 | 2024-04-19 | Initial release |

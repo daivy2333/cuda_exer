@@ -1,0 +1,16 @@
+{
+  "deps": [
+    "import:[.adaptive_batcher]",
+    "import:[.queue_model]"
+  ],
+  "file": "../src/dynamicBatching/__init__.py",
+  "hash": "4dced36c800531464e9715a46d9121f09cebb3f33bb646a16a82cc0f117100a1",
+  "lang": "PY",
+  "symbols": [],
+  "timestamp": "2026-04-22T13:23:12.800733",
+  "unit": {
+    "module": "dynamicBatching",
+    "role": "lib"
+  },
+  "version": "pir-analyzer-v1"
+}

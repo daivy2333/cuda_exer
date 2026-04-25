@@ -40,7 +40,7 @@ class BPHAOperator(nn.Module):
         self,
         query: torch.Tensor,
         kv_blocks: List[Tuple[torch.Tensor, torch.Tensor]],
-        block_offsets: List[int]
+        block_offsets: List[int],
     ) -> torch.Tensor:
         """
         Compute BPHA attention.
@@ -63,7 +63,9 @@ class BPHAOperator(nn.Module):
             q_b = query[b]
             output_b = torch.zeros_like(q_b)
 
-            for block_idx, ((k_block, v_block), offset) in enumerate(zip(kv_blocks, block_offsets)):
+            for block_idx, ((k_block, v_block), offset) in enumerate(
+                zip(kv_blocks, block_offsets)
+            ):
                 k = k_block[b] if k_block.dim() > 2 else k_block
                 v = v_block[b] if v_block.dim() > 2 else v_block
 
@@ -74,17 +76,17 @@ class BPHAOperator(nn.Module):
                 block_output = torch.matmul(attn_weights, v)
 
                 valid_tokens = k.shape[0]
-                output_b[offset:offset + valid_tokens] += block_output[:valid_tokens]
+                end_idx = min(offset + valid_tokens, q_len)
+                actual_valid = end_idx - offset
+                if actual_valid > 0:
+                    output_b[offset:end_idx] += block_output[:actual_valid]
 
             outputs.append(output_b)
 
         return torch.stack(outputs, dim=0)
 
     def compute_block_attention(
-        self,
-        query: torch.Tensor,
-        k_block: torch.Tensor,
-        v_block: torch.Tensor
+        self, query: torch.Tensor, k_block: torch.Tensor, v_block: torch.Tensor
     ) -> torch.Tensor:
         """
         Compute attention for a single block.
@@ -102,5 +104,7 @@ class BPHAOperator(nn.Module):
         return torch.matmul(attn_weights, v_block)
 
     def __repr__(self) -> str:
-        return (f"BPHAOperator(hidden_dim={self.hidden_dim}, "
-                f"num_heads={self.num_heads}, block_size={self.block_size})")
+        return (
+            f"BPHAOperator(hidden_dim={self.hidden_dim}, "
+            f"num_heads={self.num_heads}, block_size={self.block_size})"
+        )

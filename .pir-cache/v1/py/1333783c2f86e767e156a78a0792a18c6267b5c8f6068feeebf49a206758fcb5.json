@@ -1,0 +1,16 @@
+{
+  "deps": [
+    "import:[.memory_tracker]",
+    "import:[.allocator]"
+  ],
+  "file": "../src/memory/__init__.py",
+  "hash": "1333783c2f86e767e156a78a0792a18c6267b5c8f6068feeebf49a206758fcb5",
+  "lang": "PY",
+  "symbols": [],
+  "timestamp": "2026-04-22T13:23:12.808278",
+  "unit": {
+    "module": "memory",
+    "role": "lib"
+  },
+  "version": "pir-analyzer-v1"
+}

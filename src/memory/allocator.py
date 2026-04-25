@@ -2,6 +2,7 @@
 Block Allocator: Memory allocation for fixed-size blocks
 """
 
+from collections import deque
 from typing import List, Optional, Set
 from dataclasses import dataclass
 
@@ -9,6 +10,7 @@ from dataclasses import dataclass
 @dataclass
 class Allocation:
     """Represents a memory allocation."""
+
     block_id: int
     size: int
     in_use: bool = True
@@ -36,7 +38,7 @@ class BlockAllocator:
         self.block_size = block_size
         self.total_size = num_blocks * block_size
 
-        self.free_blocks: List[int] = list(range(num_blocks))
+        self.free_blocks: deque = deque(range(num_blocks))
         self.allocations: List[Allocation] = [
             Allocation(block_id=i, size=block_size, in_use=False)
             for i in range(num_blocks)
@@ -59,7 +61,7 @@ class BlockAllocator:
         for _ in range(num_blocks_requested):
             if not self.free_blocks:
                 return None
-            block_id = self.free_blocks.pop(0)
+            block_id = self.free_blocks.popleft()
             self.allocations[block_id].in_use = True
             allocated.append(block_id)
 
@@ -77,14 +79,13 @@ class BlockAllocator:
                 self.allocations[block_id].in_use = False
                 if block_id not in self.free_blocks:
                     self.free_blocks.append(block_id)
-
-        self.free_blocks.sort()
+        self.free_blocks = deque(sorted(self.free_blocks, reverse=True))
 
     def free_all(self):
         """Free all allocated blocks."""
         for i in range(self.num_blocks):
             self.allocations[i].in_use = False
-        self.free_blocks = list(range(self.num_blocks))
+        self.free_blocks = deque(range(self.num_blocks))
 
     def get_num_free(self) -> int:
         """Get number of free blocks."""
@@ -114,7 +115,7 @@ class BlockAllocator:
         consecutive_groups = 1
         sorted_free = sorted(self.free_blocks)
         for i in range(1, len(sorted_free)):
-            if sorted_free[i] != sorted_free[i-1] + 1:
+            if sorted_free[i] != sorted_free[i - 1] + 1:
                 consecutive_groups += 1
 
         max_groups = len(self.free_blocks)
@@ -126,10 +127,12 @@ class BlockAllocator:
 
     def reset(self):
         """Reset allocator to initial state."""
-        self.free_blocks = list(range(self.num_blocks))
+        self.free_blocks = deque(range(self.num_blocks))
         for alloc in self.allocations:
             alloc.in_use = False
 
     def __repr__(self) -> str:
-        return (f"BlockAllocator(blocks={self.get_num_used()}/{self.num_blocks}, "
-                f"util={self.get_utilization():.1%}, frag={self.get_fragmentation():.1%})")
+        return (
+            f"BlockAllocator(blocks={self.get_num_used()}/{self.num_blocks}, "
+            f"util={self.get_utilization():.1%}, frag={self.get_fragmentation():.1%})"
+        )

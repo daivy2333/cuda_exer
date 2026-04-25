@@ -1,0 +1,25 @@
+{
+  "deps": [
+    "import:[sys]",
+    "import:[os]",
+    "import:[memory]"
+  ],
+  "file": "../examples/example_memory_tracking.py",
+  "hash": "2c1dd8982f689097930846f1b250c5044554d4e8889da0c29b3f380db6beb507",
+  "lang": "PY",
+  "symbols": [
+    {
+      "attrs": {
+        "entry": "true"
+      },
+      "kind": "func",
+      "name": "main"
+    }
+  ],
+  "timestamp": "2026-04-22T13:23:12.815842",
+  "unit": {
+    "module": "examples",
+    "role": "lib"
+  },
+  "version": "pir-analyzer-v1"
+}

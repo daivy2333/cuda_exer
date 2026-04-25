@@ -1,0 +1,23 @@
+{
+  "deps": [
+    "import:[typing]",
+    "import:[numpy]",
+    "import:[.block_table]"
+  ],
+  "file": "../src/pagedAttention/paged_memory.py",
+  "hash": "27b5574adbc62299431cbca12ae4292ae6f0d017e8eeb67ca0b528c8446efae9",
+  "lang": "PY",
+  "symbols": [
+    {
+      "attrs": {},
+      "kind": "class",
+      "name": "PagedMemoryManager"
+    }
+  ],
+  "timestamp": "2026-04-22T13:23:12.811217",
+  "unit": {
+    "module": "pagedAttention",
+    "role": "lib"
+  },
+  "version": "pir-analyzer-v1"
+}

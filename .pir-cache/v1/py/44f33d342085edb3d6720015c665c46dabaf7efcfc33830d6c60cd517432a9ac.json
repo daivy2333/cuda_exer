@@ -1,0 +1,25 @@
+{
+  "deps": [
+    "import:[sys]",
+    "import:[os]",
+    "import:[pagedAttention]"
+  ],
+  "file": "../examples/example_block_table.py",
+  "hash": "44f33d342085edb3d6720015c665c46dabaf7efcfc33830d6c60cd517432a9ac",
+  "lang": "PY",
+  "symbols": [
+    {
+      "attrs": {
+        "entry": "true"
+      },
+      "kind": "func",
+      "name": "main"
+    }
+  ],
+  "timestamp": "2026-04-22T13:23:12.814509",
+  "unit": {
+    "module": "examples",
+    "role": "lib"
+  },
+  "version": "pir-analyzer-v1"
+}

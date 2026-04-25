@@ -14,15 +14,16 @@ from dynamicBatching import AdaptiveBatcher, M1M1Queue
 
 def simulate_requests(batcher, num_requests=20):
     """Simulate request arrivals."""
+    from dynamicBatching.adaptive_batcher import Request
     print(f"\nSimulating {num_requests} request arrivals...")
 
     for i in range(num_requests):
-        request = type('Request', (), {
-            'request_id': i,
-            'arrival_time': time.time(),
-            'seq_length': 100 + (i % 200),
-            'metadata': {}
-        })()
+        request = Request(
+            request_id=i,
+            arrival_time=time.time(),
+            seq_length=100 + (i % 200),
+            metadata={}
+        )
 
         batcher.add_request(request)
 

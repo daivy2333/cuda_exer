@@ -9,19 +9,21 @@ from enum import Enum
 
 class ContiguityType(Enum):
     """Contiguity classification for tensor regions."""
-    CONTIGUOUS = 'contiguous'
-    NON_CONTIGUOUS = 'non-contiguous'
-    PARTIALLY_CONTIGUOUS = 'partially-contiguous'
-    BLOCKED = 'blocked'
+
+    CONTIGUOUS = "contiguous"
+    NON_CONTIGUOUS = "non-contiguous"
+    PARTIALLY_CONTIGUOUS = "partially-contiguous"
+    BLOCKED = "blocked"
 
 
 class AccessPattern(Enum):
     """Access pattern classification."""
-    SEQUENTIAL = 'sequential'
-    RANDOM = 'random'
-    BLOCKED_RANDOM = 'blocked-random'
-    STRIDED = 'strided'
-    BLOCKED_STRIDED = 'blocked-strided'
+
+    SEQUENTIAL = "sequential"
+    RANDOM = "random"
+    BLOCKED_RANDOM = "blocked-random"
+    STRIDED = "strided"
+    BLOCKED_STRIDED = "blocked-strided"
 
 
 @dataclass
@@ -29,6 +31,7 @@ class TensorLayout:
     """
     Metadata describing tensor memory layout for compiler optimization.
     """
+
     shape: Tuple[int, ...]
     strides: Tuple[int, ...]
     block_size: Optional[Tuple[int, ...]] = None
@@ -56,10 +59,10 @@ class TensorLayout:
         Returns:
             Effective stride
         """
-        if self.strides:
+        if self.strides and dim < len(self.strides):
             return self.strides[dim]
         if self.block_size:
-            return int(self.strides[-1]) if self.strides else 1
+            return 1
         return 1
 
     def estimate_cache_friendliness(self) -> float:
@@ -80,7 +83,9 @@ class TensorLayout:
         else:
             return 0.2
 
-    def suggest_tile_shape(self, cache_size: int, element_size: int = 4) -> Tuple[int, ...]:
+    def suggest_tile_shape(
+        self, cache_size: int, element_size: int = 4
+    ) -> Tuple[int, ...]:
         """
         Suggest tile shape for given cache size.
 
@@ -105,7 +110,9 @@ class TensorLayout:
         return tuple(tile_shape)
 
     @classmethod
-    def from_tensor(cls, tensor, block_size: Optional[Tuple[int, ...]] = None) -> 'TensorLayout':
+    def from_tensor(
+        cls, tensor, block_size: Optional[Tuple[int, ...]] = None
+    ) -> "TensorLayout":
         """
         Create TensorLayout from a tensor.
 
@@ -137,14 +144,19 @@ class TensorLayout:
             strides=strides,
             block_size=block_size,
             contiguity=contiguity,
-            access_pattern=access_pattern
+            access_pattern=access_pattern,
         )
 
     @staticmethod
-    def _compute_contiguity(shape: Tuple[int, ...], strides: Tuple[int, ...]) -> ContiguityType:
+    def _compute_contiguity(
+        shape: Tuple[int, ...], strides: Tuple[int, ...]
+    ) -> ContiguityType:
         """Compute contiguity from shape and strides."""
         if len(shape) == 1:
             return ContiguityType.CONTIGUOUS
+
+        if not strides:
+            return ContiguityType.NON_CONTIGUOUS
 
         expected_stride = 1
         is_contiguous = True
@@ -159,10 +171,15 @@ class TensorLayout:
         if is_contiguous:
             return ContiguityType.CONTIGUOUS
 
+        if all(strides[dim] >= strides[dim + 1] for dim in range(len(strides) - 1)):
+            return ContiguityType.PARTIALLY_CONTIGUOUS
+
         return ContiguityType.NON_CONTIGUOUS
 
     @staticmethod
-    def _infer_access_pattern(strides: Tuple[int, ...], shape: Tuple[int, ...]) -> AccessPattern:
+    def _infer_access_pattern(
+        strides: Tuple[int, ...], shape: Tuple[int, ...]
+    ) -> AccessPattern:
         """Infer access pattern from strides."""
         if len(strides) == 1:
             return AccessPattern.SEQUENTIAL
@@ -172,7 +189,11 @@ class TensorLayout:
             if shape[dim] == 1:
                 continue
             if strides[dim] != expected_stride:
-                if strides[dim] > expected_stride * shape[dim + 1] if dim + 1 < len(shape) else False:
+                # Check if this is a strided access pattern
+                if (
+                    dim + 1 < len(shape)
+                    and strides[dim] > expected_stride * shape[dim + 1]
+                ):
                     return AccessPattern.STRIDED
                 return AccessPattern.RANDOM
             expected_stride *= shape[dim]
@@ -180,6 +201,8 @@ class TensorLayout:
         return AccessPattern.SEQUENTIAL
 
     def __repr__(self) -> str:
-        return (f"TensorLayout(shape={self.shape}, "
-                f"contiguity={self.contiguity.value}, "
-                f"access_pattern={self.access_pattern.value})")
+        return (
+            f"TensorLayout(shape={self.shape}, "
+            f"contiguity={self.contiguity.value}, "
+            f"access_pattern={self.access_pattern.value})"
+        )

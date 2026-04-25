@@ -1,0 +1,17 @@
+{
+  "deps": [
+    "import:[.memory_benchmark]",
+    "import:[.bpha_benchmark]",
+    "import:[.batching_benchmark]"
+  ],
+  "file": "../benchmarks/__init__.py",
+  "hash": "21dda71ba8d8a438cd095ad7456b5ab83871f8d5634880de3f84a35669fac8a4",
+  "lang": "PY",
+  "symbols": [],
+  "timestamp": "2026-04-22T13:23:12.818455",
+  "unit": {
+    "module": "benchmarks",
+    "role": "lib"
+  },
+  "version": "pir-analyzer-v1"
+}

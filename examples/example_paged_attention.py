@@ -63,7 +63,8 @@ def main():
     print(f"New KV shape: {new_kv[0].shape}")
 
     print("\n--- Verifying correctness ---")
-    max_diff, standard_out, paged_out = pa.compare_with_standard_attention(
+    from pagedAttention.paged_attention import compare_with_standard_attention
+    max_diff, standard_out, paged_out = compare_with_standard_attention(
         pa, bt, seq_id=1, num_tokens=num_tokens, d_k=hidden_dim
     )
     print(f"Max difference from standard attention: {max_diff:.2e}")
