@@ -77,5 +77,71 @@ class TestBPHAAttention(unittest.TestCase):
         self.assertFalse(torch.isnan(output).any())
 
 
+class TestKVCacheManager(unittest.TestCase):
+    def setUp(self):
+        self.num_layers = 36
+        self.num_kv_heads = 2
+        self.head_dim = 128
+        self.block_size = 16
+        self.max_blocks = 100
+
+    def test_kv_cache_manager_init(self):
+        """Test KVCacheManager initialization."""
+        from qwen_adapter.kv_cache_manager import KVCacheManager
+
+        manager = KVCacheManager(
+            num_layers=self.num_layers,
+            num_kv_heads=self.num_kv_heads,
+            head_dim=self.head_dim,
+            block_size=self.block_size,
+            max_blocks=self.max_blocks,
+        )
+
+        self.assertEqual(manager.num_layers, 36)
+        self.assertEqual(manager.num_kv_heads, 2)
+        self.assertEqual(manager.block_size, 16)
+
+    def test_allocate_and_store(self):
+        """Test allocating and storing KV blocks."""
+        import torch
+        from qwen_adapter.kv_cache_manager import KVCacheManager
+
+        manager = KVCacheManager(
+            num_layers=self.num_layers,
+            num_kv_heads=self.num_kv_heads,
+            head_dim=self.head_dim,
+            block_size=self.block_size,
+            max_blocks=self.max_blocks,
+        )
+
+        # Simulate new tokens
+        k_new = torch.randn(1, self.num_kv_heads, 10, self.head_dim)
+        v_new = torch.randn(1, self.num_kv_heads, 10, self.head_dim)
+
+        manager.allocate_sequence(seq_id=1, num_tokens=10)
+        manager.store_kv(layer_idx=0, seq_id=1, k_new=k_new, v_new=v_new)
+
+        blocks = manager.get_kv_blocks(layer_idx=0, seq_id=1)
+        self.assertTrue(len(blocks) > 0)
+
+    def test_memory_stats(self):
+        """Test memory statistics reporting."""
+        from qwen_adapter.kv_cache_manager import KVCacheManager
+
+        manager = KVCacheManager(
+            num_layers=self.num_layers,
+            num_kv_heads=self.num_kv_heads,
+            head_dim=self.head_dim,
+            block_size=self.block_size,
+            max_blocks=self.max_blocks,
+        )
+
+        stats = manager.get_memory_stats()
+
+        self.assertIn("total_blocks", stats)
+        self.assertIn("used_blocks", stats)
+        self.assertIn("memory_bytes", stats)
+
+
 if __name__ == '__main__':
     unittest.main()
