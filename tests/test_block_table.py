@@ -50,12 +50,19 @@ class TestBlockTable(unittest.TestCase):
 
     def test_free_and_reallocate(self):
         """Test that freed blocks can be reused."""
+        initial_free = self.bt.get_num_free_blocks()
         blocks1 = self.bt.allocate(seq_id=1, num_tokens=50)
+        free_before_free = self.bt.get_num_free_blocks()
+
         self.bt.free(seq_id=1)
+        free_after = self.bt.get_num_free_blocks()
+
+        self.assertEqual(free_after - free_before_free, len(blocks1))
+        self.assertEqual(free_after, initial_free)
 
         blocks2 = self.bt.allocate(seq_id=2, num_tokens=30)
-
-        self.assertEqual(blocks1[:2], blocks2)
+        self.assertEqual(len(blocks2), 2)
+        self.assertEqual(self.bt.get_num_free_blocks(), initial_free - 2)
 
     def test_allocation_failure(self):
         """Test allocation fails when out of blocks."""
