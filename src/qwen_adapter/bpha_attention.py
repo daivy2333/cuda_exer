@@ -34,6 +34,7 @@ class BPHAAttention(nn.Module):
         num_heads: int,
         num_kv_heads: int,
         block_size: int = 16,
+        layer_idx: int = 0,
     ):
         super().__init__()
 
@@ -41,6 +42,7 @@ class BPHAAttention(nn.Module):
         self.num_heads = num_heads
         self.num_kv_heads = num_kv_heads
         self.block_size = block_size
+        self.layer_idx = layer_idx
 
         self.head_dim = hidden_size // num_heads
         self.num_groups = num_heads // num_kv_heads
@@ -116,6 +118,29 @@ class BPHAAttention(nn.Module):
         output = self.o_proj(attn_output)
 
         return output
+
+    def reshape_for_cache(
+        self,
+        k: torch.Tensor,
+        v: torch.Tensor,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        Reshape K, V for storing in paged cache.
+
+        Args:
+            k: [batch, seq_len, hidden_size] (after k_proj)
+            v: [batch, seq_len, hidden_size] (after v_proj)
+
+        Returns:
+            k_cache: [batch, num_kv_heads, seq_len, head_dim]
+            v_cache: [batch, num_kv_heads, seq_len, head_dim]
+        """
+        batch_size, seq_len, _ = k.shape
+
+        k_cache = k.view(batch_size, seq_len, self.num_kv_heads, self.head_dim).transpose(1, 2)
+        v_cache = v.view(batch_size, seq_len, self.num_kv_heads, self.head_dim).transpose(1, 2)
+
+        return k_cache, v_cache
 
     def __repr__(self) -> str:
         return (
