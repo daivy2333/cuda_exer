@@ -187,7 +187,34 @@ Based on the benchmark results, we provide the following recommendations for dif
 
 ---
 
-## 5. Conclusion
+## 5. Verification
+
+### Benchmark Methodology
+- Warmup iterations: 10 (to allow GPU kernel compilation caching)
+- Measured iterations: 100 (sufficient for stable timing)
+- Timing: Wall-clock time via Python `time.time()`
+- Memory: CUDA `max_memory_allocated()` for peak usage
+
+### Cross-Validation
+- Results validated against Phase 2 memory optimization benchmarks
+- Block size recommendations match Phase 2 optimal findings
+- Throughput scaling aligns with theoretical batch size scaling
+
+### Reproducibility
+Run the following commands to reproduce results:
+```bash
+source ~/miniconda3/etc/profile.d/conda.sh && conda activate base
+python benchmarks/performance_comparison_benchmark.py
+```
+
+### Known Limitations
+- CPU-side benchmarks (CUDA not used for latency/throughput tests)
+- Single GPU results only (RTX 4060 8GB)
+- Hidden dim 64-128 only tested
+
+---
+
+## 6. Conclusion
 
 The BPHA operator successfully implements paged attention with the following characteristics:
 
