@@ -70,8 +70,11 @@ class KVCacheManager:
         # Sequence allocations: seq_id -> list of allocated block_ids
         self.seq_allocations: Dict[int, List[int]] = {}
 
-        # Sequence token counts: seq_id -> current number of tokens
+        # Sequence token counts: seq_id -> current number of tokens allocated
         self.seq_token_counts: Dict[int, int] = {}
+
+        # Stored token counts: seq_id -> actual number of tokens stored in cache
+        self.seq_stored_tokens: Dict[int, int] = {}
 
     def allocate_sequence(self, seq_id: int, num_tokens: int) -> List[int]:
         """Allocate blocks for a sequence.
@@ -132,6 +135,7 @@ class KVCacheManager:
 
         self.seq_allocations[seq_id] = allocated_blocks
         self.seq_token_counts[seq_id] = num_tokens
+        self.seq_stored_tokens[seq_id] = 0  # Initialize as 0, will be updated by store_kv
 
         return allocated_blocks
 
@@ -200,6 +204,11 @@ class KVCacheManager:
             if tokens_stored >= num_tokens:
                 break
 
+        # Note: We don't update seq_stored_tokens here because it would be
+        # incremented multiple times (once per layer). Instead, we track
+        # stored tokens using block.num_tokens and update seq_stored_tokens
+        # externally when needed.
+
     def get_kv_blocks(
         self,
         layer_idx: int,
@@ -223,9 +232,120 @@ class KVCacheManager:
         for block_id in block_ids:
             block = self.physical_blocks[(layer_idx, block_id)]
             if block.num_tokens > 0:
-                kv_blocks.append((block.k_data, block.v_data))
+                # Only return valid tokens, not the full block_size
+                k_valid = block.k_data[:, :, :block.num_tokens, :]
+                v_valid = block.v_data[:, :, :block.num_tokens, :]
+                kv_blocks.append((k_valid, v_valid))
 
         return kv_blocks
+
+    def extend_sequence(self, seq_id: int, additional_tokens: int) -> None:
+        """Extend a sequence to accommodate more tokens.
+
+        Allocates additional blocks if needed for the new tokens.
+
+        Args:
+            seq_id: Sequence identifier
+            additional_tokens: Number of additional tokens to allocate space for
+
+        Raises:
+            RuntimeError: If sequence not allocated or not enough free blocks
+        """
+        if seq_id not in self.seq_allocations:
+            raise RuntimeError(f"Sequence {seq_id} not allocated")
+
+        current_tokens = self.seq_token_counts[seq_id]
+        total_tokens = current_tokens + additional_tokens
+
+        # Calculate current and needed blocks
+        current_blocks = len(self.seq_allocations[seq_id])
+        needed_blocks = (total_tokens + self.block_size - 1) // self.block_size
+        additional_blocks = needed_blocks - current_blocks
+
+        if additional_blocks <= 0:
+            # Already have enough blocks
+            self.seq_token_counts[seq_id] = total_tokens
+            return
+
+        if additional_blocks > len(self.free_block_ids):
+            raise RuntimeError(
+                f"Not enough free blocks: need {additional_blocks}, "
+                f"have {len(self.free_block_ids)}"
+            )
+
+        # Allocate additional blocks
+        for _ in range(additional_blocks):
+            block_id = self.free_block_ids.pop(0)
+
+            # Create KVBlock for each layer
+            for layer_idx in range(self.num_layers):
+                block = KVBlock(
+                    block_id=block_id,
+                    k_data=torch.zeros(
+                        self.batch_size, self.num_kv_heads, self.block_size, self.head_dim,
+                        device=self.device,
+                        dtype=self.dtype,
+                    ),
+                    v_data=torch.zeros(
+                        self.batch_size, self.num_kv_heads, self.block_size, self.head_dim,
+                        device=self.device,
+                        dtype=self.dtype,
+                    ),
+                    num_tokens=0,
+                    seq_id=seq_id,
+                )
+                self.physical_blocks[(layer_idx, block_id)] = block
+                self.layer_block_tables[layer_idx][seq_id].append(block_id)
+
+            self.seq_allocations[seq_id].append(block_id)
+
+        self.seq_token_counts[seq_id] = total_tokens
+
+    def get_sequence_length(self, seq_id: int) -> int:
+        """Get the current number of tokens stored for a sequence.
+
+        Args:
+            seq_id: Sequence identifier
+
+        Returns:
+            Number of tokens actually stored in the sequence
+
+        Raises:
+            RuntimeError: If sequence not allocated
+        """
+        if seq_id not in self.seq_allocations:
+            raise RuntimeError(f"Sequence {seq_id} not allocated")
+
+        # Calculate stored tokens from block.num_tokens (for any layer)
+        # All layers should have the same number of stored tokens
+        block_ids = self.seq_allocations[seq_id]
+        if not block_ids:
+            return 0
+
+        # Use layer 0's blocks to calculate stored tokens
+        total_tokens = 0
+        for block_id in block_ids:
+            key = (0, block_id)  # Use layer 0
+            if key in self.physical_blocks:
+                total_tokens += self.physical_blocks[key].num_tokens
+
+        return total_tokens
+
+    def get_allocated_length(self, seq_id: int) -> int:
+        """Get the allocated token capacity for a sequence.
+
+        Args:
+            seq_id: Sequence identifier
+
+        Returns:
+            Maximum number of tokens that can be stored
+
+        Raises:
+            RuntimeError: If sequence not allocated
+        """
+        if seq_id not in self.seq_token_counts:
+            raise RuntimeError(f"Sequence {seq_id} not allocated")
+        return self.seq_token_counts[seq_id]
 
     def free_sequence(self, seq_id: int) -> None:
         """Free all blocks allocated for a sequence.
@@ -255,6 +375,8 @@ class KVCacheManager:
         del self.seq_allocations[seq_id]
         if seq_id in self.seq_token_counts:
             del self.seq_token_counts[seq_id]
+        if seq_id in self.seq_stored_tokens:
+            del self.seq_stored_tokens[seq_id]
 
     def get_memory_stats(self) -> Dict:
         """Get memory statistics for the KV cache.

@@ -49,11 +49,11 @@ class BPHAAttention(nn.Module):
         self.scale = 1.0 / math.sqrt(self.head_dim)
 
         # Q projection: full num_heads * head_dim
-        self.q_proj = nn.Linear(hidden_size, num_heads * self.head_dim, bias=False)
+        self.q_proj = nn.Linear(hidden_size, num_heads * self.head_dim, bias=True)
 
         # K/V projections: num_kv_heads * head_dim (GQA)
-        self.k_proj = nn.Linear(hidden_size, num_kv_heads * self.head_dim, bias=False)
-        self.v_proj = nn.Linear(hidden_size, num_kv_heads * self.head_dim, bias=False)
+        self.k_proj = nn.Linear(hidden_size, num_kv_heads * self.head_dim, bias=True)
+        self.v_proj = nn.Linear(hidden_size, num_kv_heads * self.head_dim, bias=True)
 
         # Output projection
         self.o_proj = nn.Linear(num_heads * self.head_dim, hidden_size, bias=False)
