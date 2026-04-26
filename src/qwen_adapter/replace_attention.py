@@ -198,62 +198,6 @@ class BPHAAttentionWrapper(nn.Module):
         k_embed = (k * cos) + (self._rotate_half(k) * sin)
         return q_embed, k_embed
 
-    def _apply_rotary_emb(
-        self,
-        x: torch.Tensor,
-        cos: torch.Tensor,
-        sin: torch.Tensor,
-    ) -> torch.Tensor:
-        """Apply rotary embeddings to tensor.
-
-        Args:
-            x: Tensor [batch, seq_len, num_heads, head_dim]
-            cos: Cosine embeddings [batch, seq_len, head_dim]
-            sin: Sine embeddings [batch, seq_len, head_dim]
-
-        Returns:
-            Rotated tensor [batch, seq_len, num_heads, head_dim]
-        """
-        # Unsqueeze cos/sin to match x's dimensions
-        # cos/sin: [batch, seq_len, head_dim] -> [batch, seq_len, 1, head_dim]
-        cos = cos.unsqueeze(2)
-        sin = sin.unsqueeze(2)
-
-        # Rotary embedding applies to pairs of dimensions
-        # Split head_dim into two halves
-        head_dim = x.shape[-1]
-        x1 = x[..., :head_dim // 2]
-        x2 = x[..., head_dim // 2:]
-
-        # Ensure cos/sin match the half dimension
-        cos_half = cos[..., :head_dim // 2]
-        sin_half = sin[..., :head_dim // 2]
-
-        # Apply rotation
-        rotated_x1 = x1 * cos_half - x2 * sin_half
-        rotated_x2 = x1 * sin_half + x2 * cos_half
-
-        # Concatenate back
-        return torch.cat([rotated_x1, rotated_x2], dim=-1)
-
-    def _apply_rotary_emb_gqa(
-        self,
-        x: torch.Tensor,
-        cos: torch.Tensor,
-        sin: torch.Tensor,
-    ) -> torch.Tensor:
-        """Apply rotary embeddings for GQA (fewer KV heads).
-
-        Args:
-            x: Tensor [batch, seq_len, num_kv_heads, head_dim]
-            cos: Cosine embeddings
-            sin: Sine embeddings
-
-        Returns:
-            Rotated tensor [batch, seq_len, num_kv_heads, head_dim]
-        """
-        return self._apply_rotary_emb(x, cos, sin)
-
     def _compute_attention(
         self,
         q: torch.Tensor,

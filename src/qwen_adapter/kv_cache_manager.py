@@ -391,8 +391,8 @@ class KVCacheManager:
         used_blocks = self.max_blocks - len(self.free_block_ids)
 
         # Calculate memory per block
-        # K and V each: num_kv_heads * block_size * head_dim * 4 bytes (float32)
-        bytes_per_element = 4  # float32
+        # K and V each: num_kv_heads * block_size * head_dim * bytes_per_element
+        bytes_per_element = torch.tensor([], dtype=self.dtype).element_size()
         block_memory = (
             2  # K and V
             * self.num_kv_heads
