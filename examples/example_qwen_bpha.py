@@ -71,8 +71,8 @@ def main():
     print(f"  num_layers: {model.config.num_hidden_layers}")
 
     # Create KV Cache Manager with enough blocks for generation
-    block_size = 16
-    max_blocks = 500  # Enough for ~8000 tokens
+    block_size = 128  # Balanced fragmentation and performance
+    max_blocks = 400  # ~51K tokens capacity, room for model weights
     kv_manager = KVCacheManager(
         num_layers=model.config.num_hidden_layers,
         num_kv_heads=model.config.num_key_value_heads,
