@@ -184,6 +184,5 @@ MIT License
 ```bibtex
 @article{pagedattention2024,
   title={2.5-D Tensor Parallelism with Compiler-aware Paged Attention},
-  year={2024}
 }
 ```
