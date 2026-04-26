@@ -43,12 +43,6 @@ class BPHAAttentionWrapper(nn.Module):
         self.kv_manager = kv_manager
         self.layer_idx = layer_idx
 
-        # Store config for reference
-        self.hidden_size = bpha_attn.hidden_size
-        self.num_heads = bpha_attn.num_heads
-        self.num_kv_heads = bpha_attn.num_kv_heads
-        self.head_dim = bpha_attn.head_dim
-
         # Copy weights from original attention to BPHA
         self._copy_weights()
 
@@ -97,7 +91,7 @@ class BPHAAttentionWrapper(nn.Module):
         batch_size, seq_len, _ = hidden_states.shape
 
         # Get sequence ID from kwargs (for KV cache management)
-        seq_id = kwargs.get('seq_id', 0)
+        seq_id = kwargs.get('seq_id', 0)  # Default 0 means single-request mode
 
         # Project Q, K, V using BPHA projections
         q = self.bpha_attn.q_proj(hidden_states)
@@ -176,7 +170,7 @@ def replace_attention_with_bpha(
             hidden_size=hidden_size,
             num_heads=num_heads,
             num_kv_heads=num_kv_heads,
-            block_size=16,  # Default block size
+            block_size=16,  # Matches original BPHA benchmark config for RTX 4060
             layer_idx=layer_idx,
         )
 
