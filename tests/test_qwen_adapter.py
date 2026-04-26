@@ -143,5 +143,48 @@ class TestKVCacheManager(unittest.TestCase):
         self.assertIn("memory_bytes", stats)
 
 
+class TestReplaceAttention(unittest.TestCase):
+    def test_replace_attention_in_model(self):
+        """Test replacing attention layers in model."""
+        from qwen_adapter.model_loader import load_qwen_model
+        from qwen_adapter.replace_attention import replace_attention_with_bpha
+        from qwen_adapter.kv_cache_manager import KVCacheManager
+
+        model_path = os.path.join(
+            os.path.dirname(__file__), '..', 'model',
+            'models--Qwen--Qwen2.5-3B-Instruct', 'snapshots',
+            'aa8e72537993ba99e69dfaafa59ed015b17504d1'
+        )
+
+        model, tokenizer = load_qwen_model(model_path, device="cpu")
+
+        # Count original attention layers
+        original_attn_count = 0
+        for name, module in model.named_modules():
+            if 'self_attn' in name and hasattr(module, 'q_proj'):
+                original_attn_count += 1
+
+        self.assertTrue(original_attn_count > 0)
+
+        # Replace attention
+        kv_manager = KVCacheManager(
+            num_layers=model.config.num_hidden_layers,
+            num_kv_heads=model.config.num_key_value_heads,
+            head_dim=model.config.hidden_size // model.config.num_attention_heads,
+            block_size=16,
+            max_blocks=100,
+        )
+
+        replace_attention_with_bpha(model, kv_manager)
+
+        # Verify replacement - check for kv_manager attribute
+        bpha_count = 0
+        for name, module in model.named_modules():
+            if hasattr(module, 'forward') and hasattr(module, 'kv_manager'):
+                bpha_count += 1
+
+        self.assertEqual(bpha_count, original_attn_count)
+
+
 if __name__ == '__main__':
     unittest.main()
