@@ -45,6 +45,8 @@ class KVCacheManager:
         head_dim: int,
         block_size: int,
         max_blocks: int,
+        batch_size: int = 1,
+        dtype: torch.dtype = torch.float32,
         device: str = "cuda",
     ):
         self.num_layers = num_layers
@@ -52,6 +54,8 @@ class KVCacheManager:
         self.head_dim = head_dim
         self.block_size = block_size
         self.max_blocks = max_blocks
+        self.batch_size = batch_size
+        self.dtype = dtype
         self.device = device
 
         # Physical block pool: block_id -> KVBlock
@@ -104,12 +108,14 @@ class KVCacheManager:
                 block = KVBlock(
                     block_id=block_id,
                     k_data=torch.zeros(
-                        self.num_kv_heads, self.block_size, self.head_dim,
-                        device=self.device
+                        self.batch_size, self.num_kv_heads, self.block_size, self.head_dim,
+                        device=self.device,
+                        dtype=self.dtype,
                     ),
                     v_data=torch.zeros(
-                        self.num_kv_heads, self.block_size, self.head_dim,
-                        device=self.device
+                        self.batch_size, self.num_kv_heads, self.block_size, self.head_dim,
+                        device=self.device,
+                        dtype=self.dtype,
                     ),
                     num_tokens=0,
                     seq_id=seq_id,
@@ -183,8 +189,10 @@ class KVCacheManager:
             start_idx = block.num_tokens
             end_idx = start_idx + block_tokens
 
-            block.k_data[:, start_idx:end_idx, :] = k_new[0, :, tokens_stored:tokens_stored + block_tokens, :]
-            block.v_data[:, start_idx:end_idx, :] = v_new[0, :, tokens_stored:tokens_stored + block_tokens, :]
+            # block.k_data: [batch, num_kv_heads, block_size, head_dim]
+            # k_new[0, :, tokens_stored:tokens_stored + block_tokens, :]: [num_kv_heads, block_tokens, head_dim]
+            block.k_data[:, :, start_idx:end_idx, :] = k_new[0, :, tokens_stored:tokens_stored + block_tokens, :]
+            block.v_data[:, :, start_idx:end_idx, :] = v_new[0, :, tokens_stored:tokens_stored + block_tokens, :]
 
             block.num_tokens = end_idx
             tokens_stored += block_tokens

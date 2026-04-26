@@ -95,6 +95,7 @@ class TestKVCacheManager(unittest.TestCase):
             head_dim=self.head_dim,
             block_size=self.block_size,
             max_blocks=self.max_blocks,
+            batch_size=1,
         )
 
         self.assertEqual(manager.num_layers, 36)
@@ -112,6 +113,7 @@ class TestKVCacheManager(unittest.TestCase):
             head_dim=self.head_dim,
             block_size=self.block_size,
             max_blocks=self.max_blocks,
+            batch_size=1,
         )
 
         # Simulate new tokens
@@ -134,6 +136,7 @@ class TestKVCacheManager(unittest.TestCase):
             head_dim=self.head_dim,
             block_size=self.block_size,
             max_blocks=self.max_blocks,
+            batch_size=1,
         )
 
         stats = manager.get_memory_stats()

@@ -67,64 +67,178 @@ class BPHAAttentionWrapper(nn.Module):
     def forward(
         self,
         hidden_states: torch.Tensor,
+        position_embeddings: tuple,
         attention_mask: Optional[torch.Tensor] = None,
-        position_ids: Optional[torch.Tensor] = None,
         past_key_value: Optional[tuple] = None,
-        output_attentions: bool = False,
-        use_cache: bool = False,
+        cache_position: Optional[torch.Tensor] = None,
         **kwargs,
     ) -> tuple:
         """Forward pass using BPHA with KV cache integration.
 
         Args:
             hidden_states: Input tensor [batch, seq_len, hidden_size]
+            position_embeddings: Tuple of (cos, sin) tensors for rotary embeddings
             attention_mask: Attention mask (unused in BPHA, kept for compatibility)
-            position_ids: Position IDs (unused, kept for compatibility)
             past_key_value: Past KV cache (unused, we use KVCacheManager)
-            output_attentions: Whether to output attention weights
-            use_cache: Whether to use KV cache
+            cache_position: Cache position (unused, kept for compatibility)
             **kwargs: Additional arguments (may contain seq_id)
 
         Returns:
-            Tuple of (output, None, None) for compatibility with Qwen interface
+            Tuple of (output, None) for compatibility with Qwen2.5 interface
         """
         batch_size, seq_len, _ = hidden_states.shape
 
         # Get sequence ID from kwargs (for KV cache management)
         seq_id = kwargs.get('seq_id', 0)  # Default 0 means single-request mode
 
+        # Get rotary embeddings (cos, sin)
+        cos, sin = position_embeddings
+
         # Project Q, K, V using BPHA projections
         q = self.bpha_attn.q_proj(hidden_states)
         k = self.bpha_attn.k_proj(hidden_states)
         v = self.bpha_attn.v_proj(hidden_states)
 
-        # Reshape for KV cache
-        k_cache, v_cache = self.bpha_attn.reshape_for_cache(k, v)
+        # Reshape for rotary embeddings and attention
+        # Q: [batch, seq_len, num_heads, head_dim]
+        q = q.view(batch_size, seq_len, self.bpha_attn.num_heads, self.bpha_attn.head_dim)
+        # K: [batch, seq_len, num_kv_heads, head_dim]
+        k = k.view(batch_size, seq_len, self.bpha_attn.num_kv_heads, self.bpha_attn.head_dim)
+        # V: [batch, seq_len, num_kv_heads, head_dim]
+        v = v.view(batch_size, seq_len, self.bpha_attn.num_kv_heads, self.bpha_attn.head_dim)
 
-        # Get existing KV blocks from manager
-        kv_blocks = []
-        try:
-            kv_blocks = self.kv_manager.get_kv_blocks(self.layer_idx, seq_id)
-        except RuntimeError:
-            # Sequence not allocated yet, start with empty KV
-            pass
+        # Apply rotary embeddings to Q and K
+        # cos, sin are [batch, seq_len, head_dim]
+        # We need to apply them correctly for GQA
+        q_rot = self._apply_rotary_emb(q, cos, sin)
+        k_rot = self._apply_rotary_emb_gqa(k, cos, sin)
 
-        # Store new K, V in cache
+        # Reshape for KV cache: [batch, num_kv_heads, seq_len, head_dim]
+        k_cache = k_rot.transpose(1, 2)
+        v_cache = v.transpose(1, 2)
+
+        # Check if sequence is allocated
         try:
-            # Try to store - if sequence not allocated, allocate first
+            self.kv_manager.get_kv_blocks(self.layer_idx, seq_id)
+            # Sequence exists, store new KV
             self.kv_manager.store_kv(self.layer_idx, seq_id, k_cache, v_cache)
         except RuntimeError:
             # Sequence not allocated, allocate and store
             self.kv_manager.allocate_sequence(seq_id, seq_len)
             self.kv_manager.store_kv(self.layer_idx, seq_id, k_cache, v_cache)
-            # Get KV blocks again after allocation
-            kv_blocks = self.kv_manager.get_kv_blocks(self.layer_idx, seq_id)
 
-        # Compute attention using BPHA
-        output = self.bpha_attn(hidden_states, kv_blocks)
+        # Get all KV blocks (including newly stored)
+        kv_blocks = self.kv_manager.get_kv_blocks(self.layer_idx, seq_id)
 
-        # Return in Qwen's expected format: (hidden_states, None, past_key_value)
-        return (output, None, None)
+        # Reshape Q for attention: [batch, num_heads, seq_len, head_dim]
+        q_attn = q_rot.transpose(1, 2)
+
+        # Compute attention using BPHA's attention computation
+        output = self._compute_attention(q_attn, kv_blocks, hidden_states)
+
+        # Return in Qwen2.5's expected format: (hidden_states, None)
+        return (output, None)
+
+    def _apply_rotary_emb(
+        self,
+        x: torch.Tensor,
+        cos: torch.Tensor,
+        sin: torch.Tensor,
+    ) -> torch.Tensor:
+        """Apply rotary embeddings to tensor.
+
+        Args:
+            x: Tensor [batch, seq_len, num_heads, head_dim]
+            cos: Cosine embeddings [batch, seq_len, head_dim]
+            sin: Sine embeddings [batch, seq_len, head_dim]
+
+        Returns:
+            Rotated tensor [batch, seq_len, num_heads, head_dim]
+        """
+        # Unsqueeze cos/sin to match x's dimensions
+        # cos/sin: [batch, seq_len, head_dim] -> [batch, seq_len, 1, head_dim]
+        cos = cos.unsqueeze(2)
+        sin = sin.unsqueeze(2)
+
+        # Rotary embedding applies to pairs of dimensions
+        # Split head_dim into two halves
+        head_dim = x.shape[-1]
+        x1 = x[..., :head_dim // 2]
+        x2 = x[..., head_dim // 2:]
+
+        # Ensure cos/sin match the half dimension
+        cos_half = cos[..., :head_dim // 2]
+        sin_half = sin[..., :head_dim // 2]
+
+        # Apply rotation
+        rotated_x1 = x1 * cos_half - x2 * sin_half
+        rotated_x2 = x1 * sin_half + x2 * cos_half
+
+        # Concatenate back
+        return torch.cat([rotated_x1, rotated_x2], dim=-1)
+
+    def _apply_rotary_emb_gqa(
+        self,
+        x: torch.Tensor,
+        cos: torch.Tensor,
+        sin: torch.Tensor,
+    ) -> torch.Tensor:
+        """Apply rotary embeddings for GQA (fewer KV heads).
+
+        Args:
+            x: Tensor [batch, seq_len, num_kv_heads, head_dim]
+            cos: Cosine embeddings
+            sin: Sine embeddings
+
+        Returns:
+            Rotated tensor [batch, seq_len, num_kv_heads, head_dim]
+        """
+        return self._apply_rotary_emb(x, cos, sin)
+
+    def _compute_attention(
+        self,
+        q: torch.Tensor,
+        kv_blocks: list,
+        hidden_states: torch.Tensor,
+    ) -> torch.Tensor:
+        """Compute attention with KV blocks.
+
+        Args:
+            q: Query tensor [batch, num_heads, seq_len, head_dim]
+            kv_blocks: List of (K, V) tensor tuples
+            hidden_states: Original hidden states (for output shape)
+
+        Returns:
+            Output tensor [batch, seq_len, hidden_size]
+        """
+        batch_size, num_heads, seq_len, head_dim = q.shape
+
+        if not kv_blocks:
+            return torch.zeros_like(hidden_states)
+
+        # Concatenate KV blocks
+        k_concat = torch.cat([k for k, v in kv_blocks], dim=2)
+        v_concat = torch.cat([v for k, v in kv_blocks], dim=2)
+
+        # Expand KV for GQA
+        k_expanded = k_concat.repeat_interleave(self.bpha_attn.num_groups, dim=1)
+        v_expanded = v_concat.repeat_interleave(self.bpha_attn.num_groups, dim=1)
+
+        # Compute attention scores
+        scores = torch.einsum('bnqd,bnkd->bnqk', q, k_expanded) * self.bpha_attn.scale
+        attn_weights = torch.softmax(scores, dim=-1)
+
+        # Apply attention to values
+        attn_output = torch.einsum('bnqk,bnkd->bnqd', attn_weights, v_expanded)
+
+        # Reshape output
+        attn_output = attn_output.transpose(1, 2)
+        attn_output = attn_output.contiguous().view(batch_size, seq_len, self.bpha_attn.hidden_size)
+
+        # Output projection
+        output = self.bpha_attn.o_proj(attn_output)
+
+        return output
 
 
 def replace_attention_with_bpha(
