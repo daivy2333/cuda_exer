@@ -11,7 +11,7 @@
 This report summarizes memory optimization analysis for the BPHA (Block-Paged Hybrid Attention) KV Cache implementation on RTX 4060 8GB. Key findings:
 
 - **Optimal block_size:** 16 (minimal waste) or 128 (balanced performance)
-- **Maximum KV cache capacity:** 166K tokens (block_size=128, 1332 blocks)
+- **Maximum KV cache capacity:** 170K tokens (block_size=128, 1332 blocks)
 - **Memory utilization:** Up to 94.29% for long sequences
 
 ---
@@ -36,11 +36,11 @@ This report summarizes memory optimization analysis for the BPHA (Block-Paged Hy
 
 | Configuration | Max Blocks | Memory | Max Tokens |
 |--------------|------------|--------|------------|
-| block_size=128, 1332 blocks | 1332 | ~6GB | **166,496 tokens** |
+| block_size=128, 1332 blocks | 1332 | ~6GB | **170,496 tokens** |
 | block_size=64, 888 blocks | 888 | ~4GB | 56,832 tokens |
 | block_size=256, 250 blocks | 250 | ~2.25GB | 64,000 tokens |
 
-**Maximum capacity achieved:** 166K tokens with block_size=128
+**Maximum capacity achieved:** 170K tokens with block_size=128
 
 ### 3. Memory Efficiency by Scenario
 
@@ -182,7 +182,7 @@ python -m benchmarks.memory_optimization_benchmark
 The BPHA KV Cache implementation demonstrates excellent memory efficiency on RTX 4060:
 
 - **0% fragmentation** with block_size 16-64
-- **166K token capacity** maximum
+- **170K token capacity** maximum
 - **94%+ utilization** for long sequences
 - **Sub-50ms allocation** for typical workloads
 
