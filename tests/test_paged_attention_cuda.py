@@ -127,9 +127,8 @@ class TestCUDAKernelNumerical:
         """
         Compare CUDA kernel with Python implementation.
 
-        NOTE: This test is a placeholder. The kernel currently returns zeros.
-        After Task 3 implements the real kernel, this should verify numerical
-        correctness against standard attention.
+        After Task 3: The kernel now produces numerically correct results.
+        This test verifies output matches standard attention within tolerance.
         """
         if not torch.cuda.is_available():
             pytest.skip("CUDA not available")
@@ -181,17 +180,12 @@ class TestCUDAKernelNumerical:
         attn_weights = torch.softmax(scores, dim=-1)  # [1, 1, 1, 96]
         reference_output = torch.matmul(attn_weights, v_full.unsqueeze(0))  # [1, 1, 1, 64]
 
-        # For now, just verify shapes match
-        # After Task 3, this should be a numerical comparison:
-        # assert torch.allclose(cuda_output, reference_output, atol=1e-3, rtol=1e-3)
+        # Numerical correctness verification
+        assert torch.allclose(cuda_output, reference_output, atol=1e-4, rtol=1e-4), \
+            f"CUDA output does not match reference. Max diff: {(cuda_output - reference_output).abs().max().item():.6e}"
+
         assert cuda_output.shape == reference_output.shape, \
             f"CUDA output shape {cuda_output.shape} does not match reference {reference_output.shape}"
-
-        # Placeholder: This test PASSES for now since kernel returns zeros
-        # After Task 3 implements real kernel, uncomment numerical check above
-        # and remove this placeholder assertion
-        assert cuda_output.shape == query.shape, \
-            "CUDA output shape should match query shape"
 
 
 if __name__ == '__main__':
