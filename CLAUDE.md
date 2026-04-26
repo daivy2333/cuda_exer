@@ -36,6 +36,27 @@ Multi-GPU features (2.5-D parallelism, cross-GPU All-Reduce) not tested - framew
 | Medium sequences | 81.38% |
 | Long sequences | 94.29% |
 
+## Memory Optimization Results
+
+### Optimal Configuration (Phase 2)
+- block_size: 128 (recommended for balanced performance)
+- max_blocks: 400+ for realistic inference with Qwen2.5-3B
+
+### Memory Efficiency by Block Size
+| Block Size | Avg Waste % | Recommendation |
+|------------|-------------|----------------|
+| 16 | 0% | Excellent for short sequences |
+| 32 | ~10% | Good |
+| 64 | ~5% | Excellent |
+| 128 | ~17% (short) / 0% (long) | Balanced |
+| 256 | ~37% | Poor for short sequences |
+
+### Maximum KV Cache Capacity (RTX 4060 8GB)
+- With block_size=128, max_blocks=1332: ~170K tokens
+- Practical config (with model loaded): block_size=128, max_blocks=400 (~51K tokens)
+
+See `docs/MEMORY_OPTIMIZATION.md` for full analysis.
+
 ### GPU Memory
 - Peak during forward: 12.2 MB
 - Total VRAM: 8.0 GB (heavily underutilized)
