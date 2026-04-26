@@ -413,6 +413,169 @@ def benchmark_block_size_impact():
     return results
 
 
+def benchmark_paged_vs_contiguous():
+    """
+    Compare memory efficiency between paged and contiguous KV cache allocation.
+
+    Tests different block sizes and sequence lengths to measure memory waste.
+    """
+    print("\n" + "=" * 80)
+    print("PAGED vs CONTIGUOUS MEMORY EFFICIENCY")
+    print("=" * 80)
+
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+    # Test configurations
+    seq_lengths = [100, 200, 500, 1000, 2000]
+    block_sizes = [16, 64, 128]
+    hidden_dim = 64
+    batch_size = 1
+
+    print(f"\nDevice: {device}")
+    print(f"Hidden dim: {hidden_dim}, Batch size: {batch_size}")
+    print()
+    print(f"{'Seq Len':<12}", end="")
+    for bs in block_sizes:
+        print(f"{'BS=' + str(bs) + ' Waste%':<15}", end="")
+    print(f"{'Contiguous MB':<15}")
+    print("-" * 80)
+
+    results = []
+    for seq_len in seq_lengths:
+        # Calculate contiguous memory requirement (exact fit)
+        contiguous_blocks = seq_len  # KV pairs needed
+        contiguous_mem = batch_size * contiguous_blocks * hidden_dim * 2 * 4  # K+V, float32
+        contiguous_mb = contiguous_mem / 1024**2
+
+        row_data = []
+        print(f"{seq_len:<12}", end="")
+
+        for block_size in block_sizes:
+            # Calculate paged memory with block allocation
+            num_blocks_needed = (seq_len + block_size - 1) // block_size
+            allocated_tokens = num_blocks_needed * block_size
+            waste_tokens = allocated_tokens - seq_len
+            waste_pct = (waste_tokens / allocated_tokens) * 100 if allocated_tokens > 0 else 0
+
+            row_data.append({
+                'block_size': block_size,
+                'num_blocks': num_blocks_needed,
+                'allocated_tokens': allocated_tokens,
+                'waste_tokens': waste_tokens,
+                'waste_pct': waste_pct,
+            })
+            print(f"{waste_pct:>8.2f}%        ", end="")
+
+        print(f"{contiguous_mb:>8.4f}")
+
+        results.append({
+            'seq_len': seq_len,
+            'block_sizes': row_data,
+            'contiguous_mb': contiguous_mb,
+        })
+
+    # Print efficiency summary
+    print("\n" + "-" * 80)
+    print("Memory Efficiency Summary:")
+    print("-" * 80)
+    for bs in block_sizes:
+        avg_waste = sum(
+            r['block_sizes'][block_sizes.index(bs)]['waste_pct']
+            for r in results
+        ) / len(results)
+        print(f"  Block size {bs}: Average waste = {avg_waste:.2f}%")
+
+    return results
+
+
+def benchmark_batching_efficiency():
+    """
+    Test throughput scaling with different batch sizes.
+
+    Analyzes how BPHA handles varying levels of batching.
+    """
+    print("\n" + "=" * 80)
+    print("BATCHING EFFICIENCY ANALYSIS")
+    print("=" * 80)
+
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+    # Test configurations
+    batch_sizes = [1, 2, 4, 8, 16]
+    seq_len = 512
+    hidden_dim = 64
+    block_size = 128
+    q_len = 1
+    num_warmup = 10
+    num_iters = 100
+
+    print(f"\nDevice: {device}")
+    print(f"Fixed config: seq_len={seq_len}, hidden_dim={hidden_dim}, block_size={block_size}")
+    print()
+    print(f"{'Batch':<8} {'Latency (ms)':<15} {'Throughput (tok/s)':<20} {'Tokens/Batch':<15} {'Efficiency':<12}")
+    print("-" * 80)
+
+    results = []
+    baseline_throughput = None
+
+    for batch_size in batch_sizes:
+        # Setup inputs
+        query, kv_blocks, block_offsets = create_bpha_inputs(
+            batch_size, q_len, seq_len, hidden_dim, block_size, device
+        )
+        bpha_op = BPHAOperator(hidden_dim=hidden_dim, block_size=block_size).to(device)
+
+        # Warmup
+        for _ in range(num_warmup):
+            _ = bpha_op.forward(query, kv_blocks, block_offsets)
+        if device.type == 'cuda':
+            torch.cuda.synchronize()
+
+        # Benchmark
+        start = time.time()
+        for _ in range(num_iters):
+            _ = bpha_op.forward(query, kv_blocks, block_offsets)
+        if device.type == 'cuda':
+            torch.cuda.synchronize()
+        elapsed = time.time() - start
+
+        latency_ms = (elapsed / num_iters) * 1000
+        total_tokens = batch_size * q_len
+        throughput = (total_tokens * num_iters) / elapsed
+
+        # Calculate efficiency (throughput relative to batch=1 baseline)
+        if baseline_throughput is None:
+            baseline_throughput = throughput
+            efficiency = 1.0
+        else:
+            # Ideal scaling: throughput should increase linearly with batch
+            ideal_throughput = baseline_throughput * batch_size
+            efficiency = throughput / ideal_throughput if ideal_throughput > 0 else 0
+
+        print(f"{batch_size:<8} {latency_ms:>8.3f}       {throughput:>10.0f}           {total_tokens:<15} {efficiency:>8.2f}x")
+
+        results.append({
+            'batch_size': batch_size,
+            'latency_ms': latency_ms,
+            'throughput': throughput,
+            'total_tokens': total_tokens,
+            'efficiency': efficiency,
+        })
+
+    # Print scaling summary
+    print("\n" + "-" * 80)
+    print("Batching Scaling Summary:")
+    print("-" * 80)
+    if results:
+        max_throughput = max(r['throughput'] for r in results)
+        optimal_batch = max(results, key=lambda r: r['throughput'])['batch_size']
+        print(f"  Optimal batch size: {optimal_batch}")
+        print(f"  Max throughput: {max_throughput:.0f} tokens/s")
+        print(f"  Throughput gain (batch=16 vs batch=1): {results[-1]['throughput'] / results[0]['throughput']:.2f}x")
+
+    return results
+
+
 def main():
     """Run all benchmarks."""
     print("=" * 80)
@@ -431,6 +594,8 @@ def main():
     throughput_results = benchmark_throughput_comparison()
     memory_results = benchmark_memory_comparison()
     block_size_results = benchmark_block_size_impact()
+    paged_vs_contiguous_results = benchmark_paged_vs_contiguous()
+    batching_efficiency_results = benchmark_batching_efficiency()
 
     # Summary
     print("\n" + "=" * 80)
@@ -458,6 +623,8 @@ def main():
         'throughput': throughput_results,
         'memory': memory_results,
         'block_size': block_size_results,
+        'paged_vs_contiguous': paged_vs_contiguous_results,
+        'batching_efficiency': batching_efficiency_results,
     }
 
 
