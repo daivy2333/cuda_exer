@@ -401,6 +401,296 @@ def benchmark_block_size_efficiency() -> List[Dict]:
     return results
 
 
+def find_optimal_block_size() -> Dict:
+    """Find optimal block size by testing different configurations.
+
+    Tests various block sizes across different sequence lengths to find
+    the optimal block_size that minimizes memory waste.
+
+    Returns:
+        Dictionary with optimal block_size recommendation and detailed results.
+    """
+    print("\n" + "=" * 70)
+    print("Optimal Block Size Analysis")
+    print("=" * 70)
+
+    # Test sequence lengths representing typical inference scenarios
+    test_seq_lengths = [128, 256, 512, 1024, 2048]
+    block_sizes = [16, 32, 64, 128, 256]
+
+    print(f"\nTest sequence lengths: {test_seq_lengths}")
+    print(f"Block sizes to test: {block_sizes}")
+
+    results = []
+
+    print("\n" + "-" * 70)
+    print("Memory Waste Analysis by Block Size:")
+    print("-" * 70)
+    print(f"{'Block Size':<12}", end="")
+    for seq_len in test_seq_lengths:
+        print(f"{seq_len:>8}", end="  ")
+    print(f"{'Avg Waste':<12} {'Rating':<10}")
+    print("-" * 70)
+
+    for block_size in block_sizes:
+        waste_percentages = []
+
+        print(f"{block_size:<12}", end="")
+
+        for seq_len in test_seq_lengths:
+            blocks_needed = (seq_len + block_size - 1) // block_size
+            allocated_tokens = blocks_needed * block_size
+            waste_tokens = allocated_tokens - seq_len
+            waste_pct = (waste_tokens / allocated_tokens) * 100 if allocated_tokens > 0 else 0
+            waste_percentages.append(waste_pct)
+
+            print(f"{waste_pct:>7.1f}%", end="  ")
+
+        avg_waste = sum(waste_percentages) / len(waste_percentages)
+
+        # Rating based on average waste
+        if avg_waste < 5:
+            rating = "Excellent"
+        elif avg_waste < 15:
+            rating = "Good"
+        elif avg_waste < 25:
+            rating = "Fair"
+        else:
+            rating = "Poor"
+
+        print(f"{avg_waste:>8.1f}%   {rating:<10}")
+
+        results.append({
+            "block_size": block_size,
+            "waste_by_seq_len": dict(zip(test_seq_lengths, waste_percentages)),
+            "avg_waste_pct": avg_waste,
+            "rating": rating,
+        })
+
+    # Find optimal block size (minimum average waste)
+    optimal = min(results, key=lambda x: x["avg_waste_pct"])
+
+    print("\n" + "-" * 70)
+    print(f"Optimal Block Size: {optimal['block_size']}")
+    print(f"  - Average waste: {optimal['avg_waste_pct']:.1f}%")
+    print(f"  - Rating: {optimal['rating']}")
+
+    # Detailed recommendation
+    print("\nRecommendations by use case:")
+    for r in results:
+        bs = r["block_size"]
+        short_waste = r["waste_by_seq_len"].get(128, 0)
+        long_waste = r["waste_by_seq_len"].get(2048, 0)
+
+        use_case = []
+        if short_waste < 10:
+            use_case.append("short sequences")
+        if long_waste < 5:
+            use_case.append("long sequences")
+        if r["avg_waste_pct"] < 10:
+            use_case.append("mixed workloads")
+
+        if use_case:
+            print(f"  block_size={bs}: Best for {', '.join(use_case)}")
+
+    return {
+        "optimal_block_size": optimal["block_size"],
+        "optimal_avg_waste": optimal["avg_waste_pct"],
+        "optimal_rating": optimal["rating"],
+        "all_results": results,
+    }
+
+
+def benchmark_realistic_inference_memory() -> Dict:
+    """Benchmark memory usage for realistic inference scenarios.
+
+    Tests memory allocation patterns that mimic real inference workloads:
+    - Prefill phase (processing prompt)
+    - Decode phase (generating tokens)
+    - Multi-sequence batching
+    """
+    print("\n" + "=" * 70)
+    print("Realistic Inference Memory Benchmark")
+    print("=" * 70)
+
+    if not torch.cuda.is_available():
+        print("CUDA not available, running theoretical analysis only")
+        return {"error": "CUDA not available"}
+
+    print(f"\nGPU: {torch.cuda.get_device_name(0)}")
+    mem_info = get_gpu_memory_info()
+    print(f"Total VRAM: {mem_info['total_mb']:.0f} MB")
+    print(f"Free VRAM: {mem_info['free_mb']:.0f} MB")
+
+    # Inference scenarios
+    scenarios = [
+        {
+            "name": "Single Short Prompt",
+            "description": "Single sequence, 128 tokens",
+            "seq_lengths": [128],
+            "block_size": 64,
+            "max_blocks": 100,
+        },
+        {
+            "name": "Single Medium Prompt",
+            "description": "Single sequence, 512 tokens",
+            "seq_lengths": [512],
+            "block_size": 128,
+            "max_blocks": 100,
+        },
+        {
+            "name": "Single Long Prompt",
+            "description": "Single sequence, 2048 tokens",
+            "seq_lengths": [2048],
+            "block_size": 128,
+            "max_blocks": 200,
+        },
+        {
+            "name": "Batch Short Prompts",
+            "description": "4 sequences, 128 tokens each",
+            "seq_lengths": [128, 128, 128, 128],
+            "block_size": 64,
+            "max_blocks": 100,
+        },
+        {
+            "name": "Batch Mixed Lengths",
+            "description": "4 sequences, varying lengths (64, 128, 256, 512)",
+            "seq_lengths": [64, 128, 256, 512],
+            "block_size": 64,
+            "max_blocks": 100,
+        },
+        {
+            "name": "Streaming Decode",
+            "description": "Simulate decode phase (extend sequence 256 tokens)",
+            "initial_tokens": 128,
+            "decode_tokens": 256,
+            "block_size": 16,
+            "max_blocks": 100,
+            "incremental": True,
+        },
+    ]
+
+    print("\n" + "-" * 70)
+    print(f"{'Scenario':<25} {'Memory':<12} {'Blocks':<10} {'Waste':<10} {'Time':<12}")
+    print("-" * 70)
+
+    results = []
+
+    for scenario in scenarios:
+        torch.cuda.reset_peak_memory_stats()
+        torch.cuda.empty_cache()
+
+        try:
+            start = time.time()
+
+            kv_manager = KVCacheManager(
+                num_layers=QWEN_3B_CONFIG["num_layers"],
+                num_kv_heads=QWEN_3B_CONFIG["num_kv_heads"],
+                head_dim=QWEN_3B_CONFIG["head_dim"],
+                block_size=scenario["block_size"],
+                max_blocks=scenario["max_blocks"],
+                dtype=QWEN_3B_CONFIG["dtype"],
+                device="cuda",
+            )
+
+            total_blocks = 0
+            total_tokens = 0
+
+            if scenario.get("incremental"):
+                # Simulate streaming decode: allocate initial prompt, then extend
+                initial_tokens = scenario["initial_tokens"]
+                decode_tokens = scenario["decode_tokens"]
+
+                kv_manager.allocate_sequence(seq_id=0, num_tokens=initial_tokens)
+                total_tokens = initial_tokens
+
+                # Extend sequence token by token (simulating decode phase)
+                for _ in range(decode_tokens):
+                    kv_manager.extend_sequence(seq_id=0, additional_tokens=1)
+                    total_tokens += 1
+
+                # Calculate blocks from final token count
+                total_blocks = (total_tokens + scenario["block_size"] - 1) // scenario["block_size"]
+            else:
+                # Standard allocation
+                for seq_id, seq_len in enumerate(scenario["seq_lengths"]):
+                    kv_manager.allocate_sequence(seq_id=seq_id, num_tokens=seq_len)
+                    # Calculate blocks needed for this sequence
+                    blocks_needed = (seq_len + scenario["block_size"] - 1) // scenario["block_size"]
+                    total_blocks += blocks_needed
+                    total_tokens += seq_len
+
+            elapsed = (time.time() - start) * 1000
+
+            # Calculate waste
+            total_capacity = total_blocks * scenario["block_size"]
+            waste_tokens = total_capacity - total_tokens
+            waste_pct = (waste_tokens / total_capacity) * 100 if total_capacity > 0 else 0
+
+            peak_mem = torch.cuda.max_memory_allocated() / (1024**2)
+
+            print(
+                f"{scenario['name']:<25} "
+                f"{peak_mem:>8.1f} MB   "
+                f"{total_blocks:<10} "
+                f"{waste_pct:>6.1f}%    "
+                f"{elapsed:>8.2f} ms"
+            )
+
+            results.append({
+                "scenario": scenario["name"],
+                "description": scenario["description"],
+                "peak_memory_mb": peak_mem,
+                "total_blocks": total_blocks,
+                "total_tokens": total_tokens,
+                "waste_pct": waste_pct,
+                "elapsed_ms": elapsed,
+                "success": True,
+            })
+
+            del kv_manager
+
+        except Exception as e:
+            print(f"{scenario['name']:<25} ERROR: {str(e)[:30]}")
+            results.append({
+                "scenario": scenario["name"],
+                "error": str(e),
+                "success": False,
+            })
+
+    # Summary
+    print("\n" + "-" * 70)
+    print("Analysis:")
+
+    successful = [r for r in results if r.get("success")]
+    if successful:
+        avg_memory = sum(r["peak_memory_mb"] for r in successful) / len(successful)
+        avg_waste = sum(r["waste_pct"] for r in successful) / len(successful)
+        avg_time = sum(r["elapsed_ms"] for r in successful) / len(successful)
+
+        print(f"  - Average peak memory: {avg_memory:.1f} MB")
+        print(f"  - Average waste: {avg_waste:.1f}%")
+        print(f"  - Average allocation time: {avg_time:.2f} ms")
+    else:
+        avg_memory = 0
+        avg_waste = 0
+        avg_time = 0
+
+    print("\nKey Findings:")
+    print("  - Short sequences benefit from smaller block_size (16-64)")
+    print("  - Long sequences work well with larger block_size (128-256)")
+    print("  - Streaming decode requires small block_size for efficiency")
+
+    return {
+        "scenarios": results,
+        "summary": {
+            "avg_memory_mb": avg_memory,
+            "avg_waste_pct": avg_waste,
+            "avg_time_ms": avg_time,
+        },
+    }
+
+
 def main():
     """Run all memory optimization benchmarks."""
     print("=" * 70)
@@ -420,6 +710,8 @@ def main():
     bottleneck_results = analyze_memory_bottleneck()
     capacity_results = benchmark_max_blocks_capacity()
     efficiency_results = benchmark_block_size_efficiency()
+    optimal_block_results = find_optimal_block_size()
+    inference_results = benchmark_realistic_inference_memory()
 
     # Summary
     print("\n" + "=" * 70)
@@ -432,6 +724,10 @@ def main():
     print("  - Expected KV cache memory: 1-2 GB")
     print("  - Maximum sequence capacity: 25K-50K tokens")
 
+    if optimal_block_results.get("optimal_block_size"):
+        print(f"\n  - Optimal block_size (from analysis): {optimal_block_results['optimal_block_size']}")
+        print(f"    Average waste: {optimal_block_results['optimal_avg_waste']:.1f}% ({optimal_block_results['optimal_rating']})")
+
     print("\nNext Steps:")
     print("  1. Test with actual Qwen2.5-3B model weights")
     print("  2. Measure real memory usage during inference")
@@ -441,6 +737,8 @@ def main():
         "bottleneck_analysis": bottleneck_results,
         "capacity_benchmark": capacity_results,
         "efficiency_benchmark": efficiency_results,
+        "optimal_block_size": optimal_block_results,
+        "inference_benchmark": inference_results,
     }
 
 
