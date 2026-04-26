@@ -89,10 +89,40 @@ See `docs/MEMORY_OPTIMIZATION.md` for full analysis.
 2. Test larger hidden_dim (128, 256)
 3. Profile KV Cache capacity with real models
 
-### Phase 3: Performance Comparison
-1. Compare BPHA vs standard attention latency
-2. Compare paged vs contiguous memory efficiency
-3. Benchmark batching efficiency
+## Performance Comparison Results (Phase 3 - Completed)
+
+### BPHA vs Standard Attention
+- **Latency Ratio:** 0.67x (BPHA is 33% slower than standard attention)
+- **Memory Overhead:** +0.89 MB average for paged KV cache management
+- **Trade-off:** Acceptable overhead for memory flexibility and batching benefits
+
+### Throughput Scaling
+| Batch Size | Tokens/s | Gain vs Batch=1 |
+|------------|----------|-----------------|
+| 1 | 10,893 | 1.00x |
+| 4 | 38,861 | 3.57x |
+| 8 | 70,863 | 6.51x |
+| 16 | 132,000 | 12.11x |
+
+**Max Throughput:** 132K tokens/s at batch=16
+
+### Block Size Efficiency
+| Block Size | Avg Waste % | Recommendation |
+|------------|-------------|----------------|
+| 16 | 3.54% | Best for short sequences |
+| 32 | 5.47% | Good |
+| 64 | 6.25% | Good |
+| 128 | 10.16% | Balanced for mixed workloads |
+
+**Optimal:** block_size=16 for lowest memory waste (3.54%)
+
+### Key Findings
+1. Batching provides up to 12.11x throughput gain
+2. BPHA overhead is acceptable for production use
+3. Smaller block sizes reduce memory waste significantly
+4. Paged attention enables efficient memory sharing across sequences
+
+See `docs/PERFORMANCE_REPORT.md` for detailed benchmark data and analysis.
 
 ## Environment
 
