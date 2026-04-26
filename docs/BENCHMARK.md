@@ -4,10 +4,10 @@
 
 | 参数 | 值 |
 |------|-----|
-| **GPU** | NVIDIA GeForce RTX 4060 Laptop GPU (8GB VRAM) |
+| **GPU** | NVIDIA GeForce RTX 4060 Laptop GPU (8GB VRAM, CC 8.9) |
 | **CUDA** | 12.8 |
 | **Python** | 3.13.5 |
-| **PyTorch** | 2.9.0 |
+| **PyTorch** | 2.9.0+cu128 |
 | **模型** | Qwen2.5-3B-Instruct |
 | **日期** | 2026-04-26 |
 
@@ -59,20 +59,12 @@ max_blocks = 400  # 留空间给模型 (~3GB)
 | 指标 | BPHA | Standard | 比值 |
 |------|------|----------|------|
 | 平均延迟 | 0.098 ms | 0.067 ms | **0.67x** |
-| 最大吞吐量 | 132K tok/s | - | - |
+| 最大吞吐量 | 132K tok/s | - | batch=16 |
 | 内存开销 | +0.89 MB | baseline | +3-20% |
 
 **结论:** BPHA 有 ~33% 延迟开销，但提供分页 KV Cache 灵活性。
 
-### 2.2 延迟对比详情
-
-| 配置 | BPHA (ms) | Standard (ms) | 比值 |
-|------|-----------|---------------|------|
-| b=1, s=512, h=64, bs=128 | 0.098 | 0.072 | 0.74x |
-| b=4, s=512, h=64, bs=128 | 0.095 | 0.066 | 0.69x |
-| b=1, s=1024, h=64, bs=128 | 0.093 | 0.065 | 0.69x |
-
-### 2.3 批处理效率
+### 2.2 批处理效率
 
 | Batch Size | 吞吐量 (tok/s) | 效率 |
 |------------|---------------|------|
@@ -83,55 +75,105 @@ max_blocks = 400  # 留空间给模型 (~3GB)
 
 **最大吞吐量:** 132K tok/s @ batch=16
 
-### 2.4 内存开销
+---
 
-| 配置 | BPHA (MB) | Standard (MB) | 差值 |
-|------|-----------|---------------|------|
-| b=1, s=512, h=64 | 8.63 | 8.38 | +0.25 MB (+3%) |
-| b=4, s=512, h=64 | 10.14 | 9.14 | +1.00 MB (+11%) |
-| b=1, s=1024, h=64 | 9.13 | 8.63 | +0.50 MB (+6%) |
+## 3. CUDA Kernel (Phase 4)
+
+### 3.1 实现参数
+
+| 参数 | 值 |
+|------|-----|
+| Kernel 架构 | sm_89 (Ada Lovelace) |
+| 线程数/Block | 128 (fused) / 32 (shared) |
+| Tile 大小 | 16x16 |
+| 算法 | Online Softmax |
+
+### 3.2 数值精度
+
+| head_dim | Max Difference | 阈值 | 结果 |
+|----------|---------------|------|------|
+| 16 | 1.45e-7 | 1e-4 | ✅ PASS |
+| 64 | 1.79e-7 | 1e-4 | ✅ PASS |
+| 128 | 1.19e-7 | 1e-4 | ✅ PASS |
+
+**精度达标:** 所有测试 < 1e-4
+
+### 3.3 延迟对比
+
+| Config | Python (ms) | CUDA (ms) | Speedup |
+|--------|-------------|-----------|---------|
+| b=1,h=64,bs=16,nb=8 | 0.065 | 0.091 | **0.72x** |
+| b=1,h=128,bs=16,nb=8 | 0.069 | 0.075 | **0.93x** |
+| b=1,h=64,bs=32,nb=16 | 0.069 | 0.341 | **0.20x** |
+| b=4,h=64,bs=32,nb=16 | 0.067 | 0.308 | **0.22x** |
+| b=1,h=64,bs=64,nb=32 | 0.059 | 1.257 | **0.05x** |
+
+**平均 Speedup:** 0.34x
+
+### 3.4 性能分析
+
+**CUDA kernel 比 Python 慢的原因:**
+
+| 原因 | 说明 |
+|------|------|
+| Kernel Launch Overhead | 每次 launch ~5-10μs，小 workload 占主导 |
+| PyTorch 优化 | cuBLAS + tensor cores，高度优化 |
+| 同步点过多 | 每个 KV token 有 `__syncthreads()` |
+| 无 IO-aware 设计 | 需 Flash Attention 风格 tiling |
+
+**CUDA kernel 价值:**
+- ✅ Paged memory 灵活性（变长序列）
+- ✅ KV Cache 内存效率
+- ✅ 批处理内存共享
+- ❌ Raw speed (小 workload)
 
 ---
 
-## 3. 推荐配置
+## 4. 推荐配置
 
-### 3.1 流式聊天
+### 4.1 流式聊天 (内存优先)
 
 ```python
-block_size = 16   # 最小碎片
+block_size = 16   # 最小碎片 (3.54%)
 max_blocks = 800  # 支持多并发会话
 batch_size = 1-4
+use_cuda_kernel = False  # Python 更快
 ```
 
-### 3.2 批量推理
+### 4.2 批量推理 (吞吐量优先)
 
 ```python
 block_size = 128  # 减少分配开销
 max_blocks = 400  # ~51K tokens
 batch_size = 8-16  # 最大吞吐量
+use_cuda_kernel = False
 ```
 
-### 3.3 文档处理
+### 4.3 文档处理 (长序列)
 
 ```python
 block_size = 128
 max_blocks = 400
 batch_size = 1    # 长序列优先
+use_cuda_kernel = False
 ```
 
 ---
 
-## 4. 运行基准测试
+## 5. 运行基准测试
 
 ```bash
 source ~/miniconda3/etc/profile.d/conda.sh && conda activate base
 cd /home/daivy/projects/cuda_exer
 
 # 内存优化测试
-python -m benchmarks.memory_optimization_benchmark
+python benchmarks/memory_optimization_benchmark.py
 
 # 性能对比测试
-python -m benchmarks.performance_comparison_benchmark
+python benchmarks/performance_comparison_benchmark.py
+
+# CUDA kernel 测试
+python benchmarks/benchmark_cuda_kernel.py
 
 # 全套测试
 python -m benchmarks.run_benchmarks
@@ -139,17 +181,28 @@ python -m benchmarks.run_benchmarks
 
 ---
 
-## 5. 核心发现
+## 6. 核心发现
 
-1. **批处理收益显著:** batch=16 时吞吐量提升 12.11x
-2. **BPHA 开销可接受:** 33% 延迟开销换取内存灵活性
-3. **Block Size 影响:** 小 block 减少碎片，大 block 减少开销
-4. **分页优势:** 支持动态序列长度，内存利用率高达 94%
+### 6.1 内存优化
+- Block Size 16 最优 (3.54% 碎片)
+- 长序列利用率达 94%
+- 最大容量 170K tokens
+
+### 6.2 性能对比
+- 批处理收益: batch=16 时 12.11x 提升
+- BPHA 开销: 33% 延迟换取内存灵活性
+- 最大吞吐量: 132K tok/s
+
+### 6.3 CUDA Kernel
+- 数值精度达标 (< 1.2e-7)
+- 小 workload 比 Python 慢 (0.34x avg)
+- 价值在于内存管理而非 raw speed
 
 ---
 
 ## 参考
 
-- 内存优化详情: 本报告 Section 1
-- 性能对比详情: 本报告 Section 2
+- 内存优化: Section 1
+- 性能对比: Section 2
+- CUDA Kernel: Section 3
 - 算法原理: `docs/ALGORITHM.md`
